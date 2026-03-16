@@ -5,13 +5,16 @@ go 1.26.0
 require (
 	github.com/alitto/pond/v2 v2.6.2
 	github.com/google/uuid v1.6.0
+	github.com/twmb/murmur3 v1.1.8
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.127.0
 	github.com/ydb-platform/ydb-go-yc v0.12.3
 )
 
 require (
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
+
 	github.com/yandex-cloud/go-genproto v0.0.0-20240819112322-98a264d392f6 // indirect
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260128080146-c4ed16b24b37 // indirect
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.1 // indirect
