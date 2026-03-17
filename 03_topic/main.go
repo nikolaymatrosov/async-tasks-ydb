@@ -1,200 +1,42 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
-
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
+	"sync/atomic"
 	"syscall"
-	"time"
 
 	ydb "github.com/ydb-platform/ydb-go-sdk/v3"
-	"github.com/ydb-platform/ydb-go-sdk/v3/topic/topicoptions"
-	"github.com/ydb-platform/ydb-go-sdk/v3/topic/topicwriter"
+	"github.com/ydb-platform/ydb-go-sdk/v3/query"
 	yc "github.com/ydb-platform/ydb-go-yc"
-
-	"github.com/google/uuid"
-	"github.com/twmb/murmur3"
 )
 
-// TaskMessage is the payload written to the YDB topic.
-type TaskMessage struct {
-	ID        string    `json:"id"`
-	Payload   []byte    `json:"payload"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// generateMessage creates a TaskMessage with random content and returns its JSON encoding.
-func generateMessage() []byte {
-	payload := make([]byte, 64)
-	if _, err := rand.Read(payload); err != nil {
-		slog.Error("rand.Read failed", "err", err)
-		os.Exit(1)
-	}
-	msg := TaskMessage{
-		ID:        uuid.New().String(),
-		Payload:   payload,
-		CreatedAt: time.Now().UTC(),
-	}
-	b, err := json.Marshal(msg)
-	if err != nil {
-		slog.Error("json.Marshal failed", "err", err)
-		os.Exit(1)
-	}
-	return b
-}
-
-// safeWriter wraps a single topicwriter.Writer with exponential-backoff retry.
-type safeWriter struct {
-	w           *topicwriter.Writer
-	partitionID int64
-}
-
-// Write sends messages with exponential backoff retry.
-// Transport errors are retried up to 5 min total; ErrQueueLimitExceed retries indefinitely;
-// all other errors are returned immediately.
-func (w *safeWriter) Write(ctx context.Context, messages []topicwriter.Message) error {
-	const (
-		initialInterval = time.Second
-		multiplier      = 1.5
-		maxInterval     = 30 * time.Second
-		maxElapsed      = 5 * time.Minute
-	)
-
-	interval := initialInterval
-	start := time.Now()
-
-	for {
-		err := w.w.Write(ctx, messages...)
-		if err == nil {
-			return nil
-		}
-
-		// Context cancelled — surface immediately.
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-
-
-		// Transport error — retryable within elapsed cap.
-		if ydb.IsTransportError(err) {
-			if time.Since(start) >= maxElapsed {
-				return fmt.Errorf("max elapsed time exceeded after transport errors: %w", err)
-			}
-			slog.Warn("transport error, retrying", "err", err, "retry_in", interval, "partition_id", w.partitionID)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(interval):
-			}
-			interval = time.Duration(float64(interval) * multiplier)
-			if interval > maxInterval {
-				interval = maxInterval
-			}
-			continue
-		}
-
-		// Permanent error — surface immediately.
-		return err
-	}
-}
-
-// Producer manages per-partition writers for a single YDB topic.
-type Producer struct {
-	db         *ydb.Driver
-	topic      string
-	partitions []int64
-	writers    map[int64]*safeWriter
-}
-
-// NewProducer creates a new Producer for the given topic path.
-func NewProducer(db *ydb.Driver, topicPath string) *Producer {
-	return &Producer{
-		db:    db,
-		topic: topicPath,
-	}
-}
-
-// Start enumerates active partitions and opens one pinned writer per partition.
-func (p *Producer) Start(ctx context.Context) error {
-	if p.writers != nil {
-		panic("producer already started")
-	}
-
-	desc, err := p.db.Topic().Describe(ctx, p.topic)
-	if err != nil {
-		return fmt.Errorf("Topic().Describe: %w", err)
-	}
-
-	p.writers = make(map[int64]*safeWriter, len(desc.Partitions))
-	p.partitions = make([]int64, 0, len(desc.Partitions))
-
-	for _, part := range desc.Partitions {
-		if !part.Active {
-			continue
-		}
-		id := part.PartitionID
-		w, err := p.db.Topic().StartWriter(p.topic,
-			topicoptions.WithWriterPartitionID(id),
-			topicoptions.WithWriterWaitServerAck(true),
-		)
-		if err != nil {
-			// Partial cleanup on failure.
-			_ = p.Stop(context.Background())
-			return fmt.Errorf("StartWriter partition %d: %w", id, err)
-		}
-		p.partitions = append(p.partitions, id)
-		p.writers[id] = &safeWriter{w: w, partitionID: id}
-	}
-
-	slog.Info("producer started", "topic", p.topic, "partitions", len(p.partitions))
-	return nil
-}
-
-// Stop closes all partition writers and collects errors.
-func (p *Producer) Stop(ctx context.Context) error {
-	var errs []error
-	for id, sw := range p.writers {
-		if err := sw.w.Close(ctx); err != nil {
-			slog.Error("failed to close writer", "partition_id", id, "err", err)
-			errs = append(errs, err)
-		}
-		delete(p.writers, id)
-	}
-	slog.Info("producer stopped")
-	return errors.Join(errs...)
-}
-
-// hashKey maps a string key to a partition index using Murmur3 32-bit hash.
-func hashKey(key string, numPartitions int) int {
-	return int(murmur3.Sum32([]byte(key)) % uint32(numPartitions))
-}
-
-// Write routes messages to the partition determined by partitionKey.
-func (p *Producer) Write(ctx context.Context, partitionKey string, messages ...topicwriter.Message) error {
-	if p.writers == nil {
-		return errors.New("producer not started")
-	}
-	idx := hashKey(partitionKey, len(p.partitions))
-	partitionID := p.partitions[idx]
-	return p.writers[partitionID].Write(ctx, messages)
-}
-
 func main() {
-	topicFlag := flag.String("topic", "tasks/direct", "Topic path relative to the database root")
-	messagesFlag := flag.Int("messages", 10, "Number of messages to publish per key")
+	usersFlag := flag.Int("users", 100, "number of distinct user IDs")
+	messagesFlag := flag.Int("messages", 100000, "total messages per topic")
+	topicUserFlag := flag.String("topic-user", "tasks/by_user", "user-partitioned topic path")
+	topicIDFlag := flag.String("topic-id", "tasks/by_message_id", "message-ID-partitioned topic path")
 	flag.Parse()
 
 	// Configure structured JSON logging.
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
+	// Validate flags.
+	if *usersFlag < 1 {
+		slog.Error("flag -users must be >= 1", "value", *usersFlag)
+		os.Exit(1)
+	}
+	if *messagesFlag < 1 {
+		slog.Error("flag -messages must be >= 1", "value", *messagesFlag)
+		os.Exit(1)
+	}
+
+	// Validate required env vars.
 	endpoint := os.Getenv("YDB_ENDPOINT")
 	if endpoint == "" {
 		slog.Error("YDB_ENDPOINT is not set")
@@ -206,7 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
 	db, err := ydb.Open(ctx, endpoint,
@@ -217,50 +59,212 @@ func main() {
 		slog.Error("ydb.Open failed", "err", err)
 		os.Exit(1)
 	}
-	defer db.Close(context.Background())
+	defer db.Close(context.Background()) //nolint:errcheck
 
-	topicPath := db.Name() + "/" + *topicFlag
+	topicUser := db.Name() + "/" + *topicUserFlag
+	topicID := db.Name() + "/" + *topicIDFlag
+	totalMessages := int64(*messagesFlag)
 
-	producer := NewProducer(db, topicPath)
+	// Generate messages.
+	sampler := NewUserIDSampler(*usersFlag)
+	producer := NewProducer(db)
+	messages := producer.Generate(*messagesFlag, *usersFlag, sampler)
 
-	if err := producer.Start(ctx); err != nil {
-		slog.Error("producer.Start failed", "err", err)
+	// Publish to both topics.
+	if err := producer.Publish(ctx, messages, topicUser, func(m BenchMessage) string {
+		return m.UserID.String()
+	}); err != nil {
+		if ctx.Err() != nil {
+			os.Exit(1)
+		}
+		slog.Error("publish to by_user failed", "err", err)
 		os.Exit(1)
 	}
-	defer producer.Stop(context.Background()) //nolint:errcheck
 
-	// Demo loop: two partition keys, messagesFlag messages each.
-	keys := []string{"user-42", "order-99"}
-	var totalWritten int
-	partitionsUsed := make(map[int64]struct{})
-
-	for _, key := range keys {
-		for i := 1; i <= *messagesFlag; i++ {
-			payload := generateMessage()
-			msg := topicwriter.Message{Data: bytes.NewReader(payload)}
-
-			// Determine which partition this key maps to (for logging).
-			idx := hashKey(key, len(producer.partitions))
-			partitionID := producer.partitions[idx]
-			partitionsUsed[partitionID] = struct{}{}
-
-			if err := producer.Write(ctx, key, msg); err != nil {
-				slog.Error("write failed", "partition_key", key, "msg_index", i, "err", err)
-				continue
-			}
-
-			slog.Info("message written",
-				"partition_key", key,
-				"partition_id", partitionID,
-				"msg_index", i,
-			)
-			totalWritten++
+	if err := producer.Publish(ctx, messages, topicID, func(m BenchMessage) string {
+		return m.ID.String()
+	}); err != nil {
+		if ctx.Err() != nil {
+			os.Exit(1)
 		}
+		slog.Error("publish to by_message_id failed", "err", err)
+		os.Exit(1)
 	}
 
-	// Final stats.
-	fmt.Printf("\n--- Stats ---\n")
-	fmt.Printf("Messages written : %d\n", totalWritten)
-	fmt.Printf("Keys used        : %d\n", len(keys))
-	fmt.Printf("Partitions used  : %d\n", len(partitionsUsed))
+	if ctx.Err() != nil {
+		os.Exit(1)
+	}
+
+	consumer := NewConsumer(db)
+	var results []ScenarioResult
+
+	// Scenario 1: by_user → stats (RMW, user-aligned — low TLI expected)
+	var tli1 atomic.Int64
+	r1, err := consumer.RunScenario(ctx,
+		"by_user \u2192 stats",
+		topicUser, "bench-byuser-stats",
+		10, totalMessages, &tli1,
+		statsWorkload(db, &tli1),
+	)
+	if ctx.Err() != nil {
+		os.Exit(1)
+	}
+	if err != nil {
+		slog.Error("scenario 1 failed", "err", err)
+		os.Exit(1)
+	}
+	verifyStatsSum(ctx, db, totalMessages, "by_user \u2192 stats")
+	resetStats(ctx, db)
+	results = append(results, r1)
+
+	// Scenario 2: by_user → processed (insert-only — zero TLI expected)
+	r2, err := consumer.RunScenario(ctx,
+		"by_user \u2192 processed",
+		topicUser, "bench-byuser-processed",
+		10, totalMessages, nil,
+		processedWorkload(db),
+	)
+	if ctx.Err() != nil {
+		os.Exit(1)
+	}
+	if err != nil {
+		slog.Error("scenario 2 failed", "err", err)
+		os.Exit(1)
+	}
+	results = append(results, r2)
+
+	// Scenario 3: by_message_id → stats (RMW, random partitioning — high TLI expected)
+	var tli3 atomic.Int64
+	r3, err := consumer.RunScenario(ctx,
+		"by_message_id \u2192 stats",
+		topicID, "bench-bymsgid-stats",
+		10, totalMessages, &tli3,
+		statsWorkload(db, &tli3),
+	)
+	if ctx.Err() != nil {
+		os.Exit(1)
+	}
+	if err != nil {
+		slog.Error("scenario 3 failed", "err", err)
+		os.Exit(1)
+	}
+	verifyStatsSum(ctx, db, totalMessages, "by_message_id \u2192 stats")
+	resetStats(ctx, db)
+	results = append(results, r3)
+
+	// Scenario 4: by_message_id → processed (insert-only — zero TLI expected)
+	r4, err := consumer.RunScenario(ctx,
+		"by_message_id \u2192 processed",
+		topicID, "bench-bymsgid-processed",
+		10, totalMessages, nil,
+		processedWorkload(db),
+	)
+	if ctx.Err() != nil {
+		os.Exit(1)
+	}
+	if err != nil {
+		slog.Error("scenario 4 failed", "err", err)
+		os.Exit(1)
+	}
+	results = append(results, r4)
+
+	if ctx.Err() != nil {
+		// Graceful shutdown: do not print the table.
+		os.Exit(1)
+	}
+
+	printTable(results)
+}
+
+// verifyStatsSum queries SUM(a)+SUM(b)+SUM(c) and warns if it differs from expected.
+func verifyStatsSum(ctx context.Context, db *ydb.Driver, expected int64, scenario string) {
+	row, err := db.Query().QueryRow(ctx,
+		`SELECT SUM(a) + SUM(b) + SUM(c) AS total FROM stats`,
+	)
+	if err != nil {
+		slog.Warn("stats sum query failed", "scenario", scenario, "err", err)
+		return
+	}
+	var total *int64
+	if err := row.ScanNamed(query.Named("total", &total)); err != nil {
+		slog.Warn("stats sum scan failed", "scenario", scenario, "err", err)
+		return
+	}
+	actual := int64(0)
+	if total != nil {
+		actual = *total
+	}
+	if actual != expected {
+		slog.Warn("stats sum mismatch", "scenario", scenario, "expected", expected, "actual", actual)
+	}
+}
+
+// resetStats truncates the stats table between scenarios.
+func resetStats(ctx context.Context, db *ydb.Driver) {
+	if err := db.Query().Exec(ctx, `DELETE FROM stats`); err != nil {
+		slog.Warn("DELETE FROM stats failed", "err", err)
+	}
+}
+
+// printTable writes the Unicode box-drawing comparison table to stdout.
+func printTable(results []ScenarioResult) {
+	const (
+		scenarioW  = 30
+		messagesW  = 10
+		tliW       = 12
+		durationW  = 10
+		msgPerSecW = 9
+	)
+
+	sep := func(left, mid, right, fill string, widths ...int) string {
+		parts := make([]string, len(widths))
+		for i, w := range widths {
+			parts[i] = strings.Repeat(fill, w)
+		}
+		result := left
+		for i, p := range parts {
+			if i > 0 {
+				result += mid
+			}
+			result += p
+		}
+		return result + right
+	}
+
+	row := func(cols ...string) string {
+		widths := []int{scenarioW - 1, messagesW - 1, tliW - 1, durationW - 1, msgPerSecW - 1}
+		s := "│"
+		for i, col := range cols {
+			w := widths[i]
+			cell := " " + col
+			if len(cell) > w {
+				cell = cell[:w]
+			}
+			s += fmt.Sprintf("%-*s│", w, cell)
+		}
+		return s
+	}
+
+	top := sep("┌", "┬", "┐", "─", scenarioW, messagesW, tliW, durationW, msgPerSecW)
+	mid := sep("├", "┼", "┤", "─", scenarioW, messagesW, tliW, durationW, msgPerSecW)
+	bot := sep("└", "┴", "┘", "─", scenarioW, messagesW, tliW, durationW, msgPerSecW)
+
+	fmt.Println(top)
+	fmt.Println(row("Scenario", "Messages", "TLI Errors", "Duration", "msg/sec"))
+	fmt.Println(mid)
+	for _, r := range results {
+		fmt.Println(row(
+			r.Name,
+			fmt.Sprintf("%d", r.Messages),
+			fmt.Sprintf("%d", r.TLIErrors),
+			formatDuration(r.Duration),
+			fmt.Sprintf("%.0f", r.MsgPerSec),
+		))
+	}
+	fmt.Println(bot)
+}
+
+// formatDuration formats a duration as e.g. "45.2s".
+func formatDuration(d interface{ Seconds() float64 }) string {
+	return fmt.Sprintf("%.1fs", d.Seconds())
 }

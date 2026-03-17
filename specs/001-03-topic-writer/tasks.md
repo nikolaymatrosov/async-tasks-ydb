@@ -61,9 +61,9 @@
 
 ### Implementation for User Story 2
 
-- [X] T011 [US2] Implement `(w *safeWriter) Write(ctx context.Context, messages []topicwriter.Message) error` in `03_topic/main.go` using `backoff.NewExponentialBackOff()` from `github.com/cenkalti/backoff/v4`: set `MaxInterval = 30*time.Second`, `MaxElapsedTime = 5*time.Minute`; wrap in `backoff.WithContext`; call `backoff.Retry` with inner function that calls `w.w.Write(ctx, messages...)`
-- [X] T012 [US2] Add error classification inside the `backoff.Retry` callback in `03_topic/main.go`: if `ctx.Err() != nil` return `backoff.Permanent(ctx.Err())`; if `errors.Is(err, topicwriter.ErrQueueLimitExceed)` reset backoff elapsed time and return the error as-is (triggers unlimited retry); for all other errors check `ydb.IsTransportError(err)` — if true return the error (retryable); otherwise return `backoff.Permanent(err)`
-- [X] T013 [US2] Add retry warning logging in `03_topic/main.go`: inside the `backoff.Retry` notify function (fourth argument) log with `slog.Warn` including `err`, `retry_in`, `partition_id` fields so retry behaviour is visible in output
+- [X] T011 [US2] Implement `(w *safeWriter) Write(ctx context.Context, messages []topicwriter.Message) error` in `03_topic/main.go` using `backoff.NewExponentialBackOff()` from `github.com/cenkalti/backoff/v5`: set `MaxInterval = 30*time.Second`; pass `backoff.WithBackOff(b)` and `backoff.WithMaxElapsedTime(5*time.Minute)` as options to `backoff.Retry(ctx, operation, opts...)`
+- [X] T012 [US2] Add error classification inside the `backoff.Retry` callback in `03_topic/main.go`: if `ctx.Err() != nil` return `backoff.Permanent(ctx.Err())`; if `errors.Is(err, topicwriter.ErrQueueLimitExceed)` restart the outer retry loop (unlimited retry); for all other errors check `ydb.IsTransportError(err)` — if true return the error (retryable); otherwise return `backoff.Permanent(err)`
+- [X] T013 [US2] Add retry warning logging in `03_topic/main.go`: pass `backoff.WithNotify(func(err error, d time.Duration) { slog.Warn(...) })` as a RetryOption so retry behaviour is visible in output
 
 **Checkpoint**: US2 complete — retry logic in place; transport errors are retried; permanent errors surface immediately.
 
@@ -91,7 +91,7 @@
 
 - [X] T017 [P] Write `03_topic/README.md`: one-time `ydb topic create` setup command, env var table (`YDB_ENDPOINT`, `YDB_SA_KEY_FILE`), run command (`go run ./03_topic/`), `-topic` and `-messages` flags, expected slog output example, troubleshooting table — mirror style of `01_db_producer/README.md`
 - [X] T018 Add final stats block to `main()` in `03_topic/main.go`: after demo loop and before `Stop`, print to stdout: total messages written, keys used, unique partition IDs observed — mirrors stats footer in existing examples
-- [X] T019 Update `03_topic/plan.md` constitution check note: replace "no new dependencies" row with updated row acknowledging `cenkalti/backoff/v4` and `twmb/murmur3` are now in `go.mod`
+- [X] T019 Update `03_topic/plan.md` constitution check note: replace "no new dependencies" row with updated row acknowledging `cenkalti/backoff/v5` and `twmb/murmur3` are now in `go.mod`
 - [X] T020 Run `go build ./03_topic/` and resolve any compilation errors in `03_topic/main.go`
 
 ---

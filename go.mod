@@ -10,11 +10,11 @@ require (
 	github.com/ydb-platform/ydb-go-yc v0.12.3
 )
 
+require github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+
 require (
-	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
-
 	github.com/yandex-cloud/go-genproto v0.0.0-20240819112322-98a264d392f6 // indirect
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20260128080146-c4ed16b24b37 // indirect
 	github.com/ydb-platform/ydb-go-yc-metadata v0.6.1 // indirect

@@ -33,15 +33,15 @@
 
 ### 3. Retry Strategy
 
-**Decision**: Wrap each write in `backoff.Retry` from `github.com/cenkalti/backoff/v4` … except this package is **not** in the project's `go.mod`. The project must implement equivalent logic using the standard library.
+**Decision**: Wrap each write in `backoff.Retry` from `github.com/cenkalti/backoff/v5` — this package is already present in `go.mod` as an indirect dependency.
 
-**Resolution**: Implement a minimal exponential-backoff loop directly in `safeWriter.Write` using `time.Sleep` and a manually tracked elapsed time. Constants: initial interval 1 s, multiplier 1.5×, max interval 30 s, max elapsed 5 min. For `ErrQueueLimitExceed`, skip the elapsed-time check and loop unconditionally (matching reference behaviour).
+**Resolution**: Use `backoff.Retry(ctx, operation, backoff.WithBackOff(b), backoff.WithMaxElapsedTime(d))` from `github.com/cenkalti/backoff/v5`. Constants: max interval 30 s, max elapsed 5 min. For `ErrQueueLimitExceed`, restart the outer retry loop unconditionally (matching reference behaviour).
 
-**Rationale**: Adding `cenkalti/backoff` solely for this example would expand `go.mod`. The hand-rolled loop is ~25 lines and fully testable.
+**Rationale**: `cenkalti/backoff/v5` is already in `go.mod`; no new dependency needed. The v5 API is generic and context-aware — context is the first argument to `Retry`, `WithContext` is gone, and `MaxElapsedTime` is expressed via the `WithMaxElapsedTime` RetryOption.
 
 **Alternatives considered**:
 
-- Adding `cenkalti/backoff/v4` as a dependency: acceptable if the project owner decides to use it widely, but out of scope for a single example.
+- Adding `cenkalti/backoff/v4` as a dependency: superseded by v5 which is already present.
 - `golang.org/x/sync`: not relevant to retry logic.
 
 ---
@@ -85,7 +85,7 @@
 | Partition enumeration | `db.Topic().Describe()` at startup |
 | Partition pinning | `topicoptions.WithWriterPartitionID` per writer |
 | Routing algorithm | FNV-1a 64-bit, `abs(hash) % len(partitions)` |
-| Retry library | Hand-rolled exponential backoff (no new dep) |
+| Retry library | `cenkalti/backoff/v5` (already in go.mod as indirect dep) |
 | Ack mode | `WithWriterWaitServerAck(true)` |
 | Error classification | `ydb.IsTransportError` + `ErrQueueLimitExceed` special case |
 | Topic path convention | `db.Name() + "/" + flag` |

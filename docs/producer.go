@@ -5,7 +5,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/topic/topicoptions"
 	"github.com/ydb-platform/ydb-go-sdk/v3/topic/topicwriter"
@@ -174,14 +174,17 @@ type safeWriter struct {
 }
 
 func (w *safeWriter) Write(ctx context.Context, messages []topicwriter.Message, logErr func(error)) error {
-	backOff := backoff.NewExponentialBackOff()
-	backOff.MaxInterval = cffggMaxBackOffInterval
-	backOff.MaxElapsedTime = cffggMaxBackOffElapsedTime
-	ctxBackOff := backoff.WithContext(backOff, ctx)
-
 	// Process ErrQueueLimitExceed
 	for {
-		err := backoff.Retry(func() error { return w.tryWrite(ctx, messages, logErr) }, ctxBackOff)
+		b := backoff.NewExponentialBackOff()
+		b.MaxInterval = cffggMaxBackOffInterval
+
+		_, err := backoff.Retry(ctx, func() (struct{}, error) {
+			return struct{}{}, w.tryWrite(ctx, messages, logErr)
+		},
+			backoff.WithBackOff(b),
+			backoff.WithMaxElapsedTime(cffggMaxBackOffElapsedTime),
+		)
 
 		if errors.Is(err, topicwriter.ErrQueueLimitExceed) {
 			continue

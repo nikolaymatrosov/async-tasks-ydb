@@ -16,7 +16,7 @@ Add a self-contained example (`03_topic/main.go`) that writes messages directly 
 **Target Platform**: Linux/macOS server process (no cross-compilation constraints)
 **Project Type**: Standalone runnable example (`go run ./03_topic/`)
 **Performance Goals**: Demonstrate correct behaviour; throughput is secondary to correctness
-**Constraints**: Uses existing `go.mod` dependencies — `cenkalti/backoff/v4` and `twmb/murmur3` were already present as indirect dependencies (now promoted to direct use); backoff constants: max interval 30 s, max elapsed time 5 min
+**Constraints**: Uses existing `go.mod` dependencies — `cenkalti/backoff/v5` and `twmb/murmur3` were already present as indirect dependencies (now promoted to direct use); backoff constants: max interval 30 s, max elapsed time 5 min
 **Scale/Scope**: Single binary; writes ~10 messages across 2 partition keys to prove routing behaviour
 
 ## Constitution Check
