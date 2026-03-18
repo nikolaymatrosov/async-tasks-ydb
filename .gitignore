@@ -3,3 +3,13 @@ sa.json
 findings.md
 progress.md
 task_plan.md
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars
+
+# Environment
+.env

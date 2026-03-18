@@ -47,16 +47,18 @@ func main() {
 	if endpoint == "" {
 		log.Fatal("YDB_ENDPOINT is not set")
 	}
-	saKeyFile := os.Getenv("YDB_SA_KEY_FILE")
-	if saKeyFile == "" {
-		log.Fatal("YDB_SA_KEY_FILE is not set")
+	var creds ydb.Option
+	if saKeyFile := os.Getenv("YDB_SA_KEY_FILE"); saKeyFile != "" {
+		creds = yc.WithServiceAccountKeyFileCredentials(saKeyFile)
+	} else {
+		creds = yc.WithMetadataCredentials()
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	db, err := ydb.Open(ctx, endpoint,
-		yc.WithServiceAccountKeyFileCredentials(saKeyFile),
+		creds,
 		yc.WithInternalCA(),
 	)
 	if err != nil {

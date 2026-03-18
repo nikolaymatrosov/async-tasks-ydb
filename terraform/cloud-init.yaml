@@ -1,0 +1,11 @@
+#cloud-config
+users:
+  - name: yc-user
+    groups: sudo, docker
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+%{ if ssh_public_key != "" ~}
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+%{ endif ~}
+

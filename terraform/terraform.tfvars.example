@@ -1,0 +1,12 @@
+# Required: Yandex Cloud identifiers
+cloud_id    = "b1g..."
+folder_id   = "b1g..."
+sa_key_file = "../sa.json"
+
+# Optional: override defaults
+# zone           = "ru-central1-a"
+# vm_cores       = 2
+# vm_memory      = 4
+# ssh_public_key = "ssh-ed25519 AAAA..."
+# ydb_name       = "async-tasks-ydb"
+# registry_name  = "async-tasks-registry"

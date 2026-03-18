@@ -1,0 +1,14 @@
+.git/
+.idea/
+.claude/
+.specify/
+terraform/
+specs/
+docs/
+migrations/
+*.md
+.env
+sa.json
+Dockerfile
+.dockerignore
+.gitignore

@@ -37,8 +37,9 @@ This application consumes events from a YDB changefeed topic (`tasks/cdc_tasks`)
 
 - `YDB_ENDPOINT`: YDB connection endpoint (required)
   - Example: `grpcs://ydb.example.com:2135`
-- `YDB_SA_KEY_FILE`: Path to YDB service account key file (required)
+- `YDB_SA_KEY_FILE`: Path to YDB service account key file (optional)
   - JSON file with authentication credentials
+  - If not set, VM metadata credentials are used automatically
 
 ### Command-line Flags
 
@@ -51,7 +52,7 @@ This application consumes events from a YDB changefeed topic (`tasks/cdc_tasks`)
 
 ```bash
 export YDB_ENDPOINT="grpcs://ydb.example.com:2135"
-export YDB_SA_KEY_FILE="/path/to/sa_key.json"
+export YDB_SA_KEY_FILE="/path/to/sa_key.json"  # optional, omit on VM
 
 go run main.go -work-delay 100ms -topic tasks/cdc_tasks -consumer cdc-worker
 ```

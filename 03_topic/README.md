@@ -29,13 +29,13 @@ ydb \
 | Variable | Required | Description |
 | -------- | -------- | ----------- |
 | `YDB_ENDPOINT` | Yes | YDB gRPC endpoint, e.g. `grpcs://ydb.example.com:2135` |
-| `YDB_SA_KEY_FILE` | Yes | Path to a JSON service-account key file |
+| `YDB_SA_KEY_FILE` | No | Path to a JSON service-account key file (if unset, VM metadata credentials are used) |
 
 ## Run
 
 ```bash
 export YDB_ENDPOINT="grpcs://ydb.example.com:2135"
-export YDB_SA_KEY_FILE="/path/to/sa_key.json"
+export YDB_SA_KEY_FILE="/path/to/sa_key.json"  # optional, omit on VM
 
 go run ./03_topic/
 ```

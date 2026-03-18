@@ -1,4 +1,5 @@
-.PHONY: migrate migrate-status migrate-up-one migrate-down migrate-reset migrate-redo
+.PHONY: migrate migrate-status migrate-up-one migrate-down migrate-reset migrate-redo \
+       docker-login docker-build docker-push deploy
 
 # Load environment variables from .env file
 include .env
@@ -30,3 +31,33 @@ migrate-reset:
 # Re-apply the latest migration
 migrate-redo:
 	@cd migrations && goose ydb "$(YDB_CONNECTION_STRING)" redo
+
+# --- Docker targets ---
+
+REGISTRY_ID := $(shell cd terraform && terraform output -raw registry_id 2>/dev/null)
+EXAMPLES := 01_db_producer 02_cdc_worker 03_topic
+
+# Authenticate Docker to Yandex Container Registry
+docker-login:
+	cat sa.json | docker login --username json_key --password-stdin cr.yandex
+
+# Build all example container images
+docker-build:
+	@for example in $(EXAMPLES); do \
+		echo "Building $$example..."; \
+		docker build --build-arg EXAMPLE=$$example -t cr.yandex/$(REGISTRY_ID)/$$example:latest .; \
+	done
+
+# Push all example container images to registry
+docker-push:
+	@for example in $(EXAMPLES); do \
+		echo "Pushing $$example..."; \
+		docker push cr.yandex/$(REGISTRY_ID)/$$example:latest; \
+	done
+
+# Full deployment: terraform apply -> build -> push -> migrate
+deploy:
+	cd terraform && terraform apply
+	$(MAKE) docker-build
+	$(MAKE) docker-push
+	$(MAKE) migrate
