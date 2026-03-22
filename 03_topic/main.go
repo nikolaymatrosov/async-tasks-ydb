@@ -19,8 +19,8 @@ import (
 func main() {
 	usersFlag := flag.Int("users", 100, "number of distinct user IDs")
 	messagesFlag := flag.Int("messages", 100000, "total messages per topic")
-	topicUserFlag := flag.String("topic-user", "tasks/by_user", "user-partitioned topic path")
-	topicIDFlag := flag.String("topic-id", "tasks/by_message_id", "message-ID-partitioned topic path")
+	topicUserFlag := flag.String("topic-user", "task_topics/by_user", "user-partitioned topic path")
+	topicIDFlag := flag.String("topic-id", "task_topics/by_message_id", "message-ID-partitioned topic path")
 	flag.Parse()
 
 	// Configure structured JSON logging.

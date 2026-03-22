@@ -1,6 +1,6 @@
 -- +goose Up
 -- +goose StatementBegin
-CREATE TOPIC `tasks/by_user` (
+CREATE TOPIC `task_topics/by_user` (
     CONSUMER `bench-byuser-stats`,
     CONSUMER `bench-byuser-processed`
 ) WITH (
@@ -10,7 +10,7 @@ CREATE TOPIC `tasks/by_user` (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE TOPIC `tasks/by_message_id` (
+CREATE TOPIC `task_topics/by_message_id` (
     CONSUMER `bench-bymsgid-stats`,
     CONSUMER `bench-bymsgid-processed`
 ) WITH (
@@ -46,9 +46,9 @@ DROP TABLE stats;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TOPIC `tasks/by_message_id`;
+DROP TOPIC `task_topics/by_message_id`;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DROP TOPIC `tasks/by_user`;
+DROP TOPIC `task_topics/by_user`;
 -- +goose StatementEnd
