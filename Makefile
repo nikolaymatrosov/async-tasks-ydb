@@ -1,5 +1,6 @@
 .PHONY: migrate migrate-status migrate-up-one migrate-down migrate-reset migrate-redo \
-       docker-login docker-build docker-push deploy docker-pull-command
+       docker-login docker-build docker-push deploy docker-pull-command \
+       docker-build-migrations docker-push-migrations docker-migrate-cmd
 
 # Load environment variables from .env file
 include .env
@@ -63,6 +64,18 @@ deploy:
 	$(MAKE) migrate
 
 docker-pull-command:
-	@for img in db_producer_image cdc_worker_image topic_bench_image; do \
+	@for img in db_producer_image cdc_worker_image topic_bench_image migrations_image; do \
 		echo "docker pull $$(cd terraform && terraform output -raw $$img)"; \
 	done
+
+# Build migrations container image
+docker-build-migrations:
+	docker build -f Dockerfile.migrations -t cr.yandex/$(REGISTRY_ID)/migrations:latest .
+
+# Push migrations container image to registry
+docker-push-migrations:
+	docker push cr.yandex/$(REGISTRY_ID)/migrations:latest
+
+# Print ready-to-use docker run command for migrations
+docker-migrate-cmd:
+	@echo "docker run --rm cr.yandex/$(REGISTRY_ID)/migrations:latest '$(YDB_ENDPOINT)&go_query_mode=scripting&go_fake_tx=scripting&go_query_bind=declare,numeric&token=$$(yc iam create-token)' up"

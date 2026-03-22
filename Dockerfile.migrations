@@ -1,0 +1,9 @@
+FROM golang:1.26-alpine AS builder
+
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY --from=builder /go/bin/goose /usr/local/bin/goose
+COPY root.crt /etc/ssl/certs/ydb-ca.crt
+COPY migrations/ /migrations/
+ENTRYPOINT ["goose", "-dir", "/migrations", "ydb"]
