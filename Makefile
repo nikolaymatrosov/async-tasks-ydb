@@ -1,5 +1,5 @@
 .PHONY: migrate migrate-status migrate-up-one migrate-down migrate-reset migrate-redo \
-       docker-login docker-build docker-push deploy
+       docker-login docker-build docker-push deploy docker-pull-command
 
 # Load environment variables from .env file
 include .env
@@ -61,3 +61,8 @@ deploy:
 	$(MAKE) docker-build
 	$(MAKE) docker-push
 	$(MAKE) migrate
+
+docker-pull-command:
+	@for img in db_producer_image cdc_worker_image topic_bench_image; do \
+		echo "docker pull $$(cd terraform && terraform output -raw $$img)"; \
+	done

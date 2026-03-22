@@ -5,6 +5,17 @@ terraform {
     yandex = {
       source = "yandex-cloud/yandex"
     }
+    dirhash = {
+      source = "Think-iT-Labs/dirhash"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = ">= 3.0"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = ">= 2.0"
+    }
   }
 }
 

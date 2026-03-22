@@ -18,9 +18,26 @@ variable "sa_key_file" {
 # Optional variables
 
 variable "zone" {
-  description = "Yandex Cloud availability zone"
+  description = "Yandex Cloud availability zone (used for non-subnet resources)"
   type        = string
   default     = "ru-central1-a"
+}
+
+variable "subnet_cidrs" {
+  description = "Map of availability zone to CIDR block for subnets"
+  type        = map(string)
+  default = {
+    "ru-central1-a" = "10.128.0.0/24"
+    "ru-central1-b" = "10.129.0.0/24"
+    "ru-central1-d" = "10.130.0.0/24"
+    # "ru-central1-e" = "10.131.0.0/24"
+  }
+}
+
+variable "platform_id" {
+  description = "Yandex Cloud platform ID for the COI VM"
+  type        = string
+  default     = "standard-v4a"
 }
 
 variable "vm_cores" {
@@ -42,9 +59,33 @@ variable "ssh_public_key" {
 }
 
 variable "ydb_name" {
-  description = "Name of the YDB Serverless database"
+  description = "Name of the YDB Dedicated database"
   type        = string
   default     = "async-tasks-ydb"
+}
+
+variable "ydb_resource_preset" {
+  description = "YDB compute resource preset (e.g. medium for 8 CPU, 32 GB)"
+  type        = string
+  default     = "medium"
+}
+
+variable "ydb_fixed_size" {
+  description = "Number of YDB compute nodes"
+  type        = number
+  default     = 1
+}
+
+variable "ydb_storage_type" {
+  description = "YDB storage type (ssd or hdd)"
+  type        = string
+  default     = "ssd"
+}
+
+variable "ydb_storage_groups" {
+  description = "Number of YDB storage groups"
+  type        = number
+  default     = 1
 }
 
 variable "registry_name" {

@@ -4,9 +4,10 @@ resource "yandex_vpc_network" "main" {
 }
 
 resource "yandex_vpc_subnet" "main" {
-  name           = "async-tasks-subnet"
-  zone           = var.zone
+  for_each       = var.subnet_cidrs
+  name           = "async-tasks-subnet-${each.key}"
+  zone           = each.key
   network_id     = yandex_vpc_network.main.id
-  v4_cidr_blocks = ["10.128.0.0/24"]
+  v4_cidr_blocks = [each.value]
   folder_id      = var.folder_id
 }

@@ -1,5 +1,46 @@
-resource "yandex_ydb_database_serverless" "main" {
+resource "yandex_ydb_database_dedicated" "main" {
   name        = var.ydb_name
   folder_id   = var.folder_id
-  location_id = "ru-central1"
+  network_id  = yandex_vpc_network.main.id
+  subnet_ids  = [for s in yandex_vpc_subnet.main : s.id]
+
+  resource_preset_id = var.ydb_resource_preset
+  scale_policy {
+    fixed_scale {
+      size = var.ydb_fixed_size
+    }
+  }
+
+  storage_config {
+    storage_type_id = var.ydb_storage_type
+    group_count     = var.ydb_storage_groups
+  }
+
+  location {
+    region {
+      id = "ru-central1"
+    }
+  }
+}
+
+data "dirhash_sha256" "migrations" {
+  directory = "../migrations"
+}
+
+resource "null_resource" "run_migrations" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      export YDB_CONNECTION_STRING="${yandex_ydb_database_dedicated.main.ydb_full_endpoint}"
+      export IAM_TOKEN="$(yc iam create-token)"
+      goose -dir ../migrations ydb "$YDB_CONNECTION_STRING&token=$IAM_TOKEN&go_query_mode=scripting&go_fake_tx=scripting&go_query_bind=declare,numeric" up
+    EOT
+  }
+
+  triggers = {
+    migrations_hash = data.dirhash_sha256.migrations.checksum
+  }
+
+  depends_on = [
+    yandex_ydb_database_dedicated.main,
+  ]
 }
