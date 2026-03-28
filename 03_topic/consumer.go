@@ -197,6 +197,7 @@ func statsWorkload(db *ydb.Driver, _ *atomic.Int64) func(context.Context, BenchM
 						)).
 						Build(),
 				),
+				query.WithTxControl(query.TxControl(query.CommitTx())),
 			)
 		}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
 	}
