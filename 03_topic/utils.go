@@ -8,9 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// UserIDSampler holds N user UUIDs and samples from them using a weighted
-// power-law distribution: weight[i] = 1/(i+1), so earlier IDs are sampled
-// more frequently.
+// UserIDSampler holds a set of user IDs and their cumulative weights for sampling.
 type UserIDSampler struct {
 	ids        []uuid.UUID
 	cumWeights []float64 // cumulative normalised weights
