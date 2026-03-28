@@ -144,8 +144,11 @@ func (c *Consumer) runPartitionReader(
 			continue
 		}
 
-		if err := workload(ctx, benchMsg); err != nil && ctx.Err() != nil {
-			return nil
+		if err := workload(ctx, benchMsg); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("workload: %w", err)
 		}
 
 		_ = reader.Commit(ctx, msg)
