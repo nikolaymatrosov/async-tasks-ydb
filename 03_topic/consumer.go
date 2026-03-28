@@ -160,9 +160,9 @@ func (c *Consumer) runPartitionReader(
 	}
 }
 
-// statsWorkload returns a workload function that atomically increments the counter
-// for msg.Type using a single UPSERT…SELECT…AS_TABLE…LEFT JOIN — no explicit
-// transaction, no TLI possible (tliCounter will always remain 0).
+// statsWorkload returns a workload function that increments the counter for
+// msg.Type using a serializable interactive transaction so that the
+// UPSERT…SELECT…LEFT JOIN read-modify-write is consistent.
 func statsWorkload(db *ydb.Driver, _ *atomic.Int64) func(context.Context, BenchMessage) error {
 	return func(ctx context.Context, msg BenchMessage) error {
 		var a, b, c int64
@@ -175,29 +175,30 @@ func statsWorkload(db *ydb.Driver, _ *atomic.Int64) func(context.Context, BenchM
 			c = 1
 		}
 
-		return db.Query().Exec(ctx,
-			`UPSERT INTO stats
-			 SELECT
-			     r.user_id AS user_id,
-			     COALESCE(t.a, 0) + r.a AS a,
-			     COALESCE(t.b, 0) + r.b AS b,
-			     COALESCE(t.c, 0) + r.c AS c
-			 FROM AS_TABLE($records) AS r
-			 LEFT JOIN stats AS t ON r.user_id = t.user_id`,
-			query.WithParameters(
-				ydb.ParamsBuilder().
-					Param("$records").Any(types.ListValue(
-						types.StructValue(
-							types.StructFieldValue("user_id", types.UuidValue(msg.UserID)),
-							types.StructFieldValue("a", types.Int64Value(a)),
-							types.StructFieldValue("b", types.Int64Value(b)),
-							types.StructFieldValue("c", types.Int64Value(c)),
-						),
-					)).
-					Build(),
-			),
-			query.WithCommit(),
-		)
+		return db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
+			return tx.Exec(ctx,
+				`UPSERT INTO stats
+				 SELECT
+				     r.user_id AS user_id,
+				     COALESCE(t.a, 0) + r.a AS a,
+				     COALESCE(t.b, 0) + r.b AS b,
+				     COALESCE(t.c, 0) + r.c AS c
+				 FROM AS_TABLE($records) AS r
+				 LEFT JOIN stats AS t ON r.user_id = t.user_id`,
+				query.WithParameters(
+					ydb.ParamsBuilder().
+						Param("$records").Any(types.ListValue(
+							types.StructValue(
+								types.StructFieldValue("user_id", types.UuidValue(msg.UserID)),
+								types.StructFieldValue("a", types.Int64Value(a)),
+								types.StructFieldValue("b", types.Int64Value(b)),
+								types.StructFieldValue("c", types.Int64Value(c)),
+							),
+						)).
+						Build(),
+				),
+			)
+		}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
 	}
 }
 
