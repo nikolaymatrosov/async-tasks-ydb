@@ -18,7 +18,7 @@ import (
 
 func main() {
 	usersFlag := flag.Int("users", 100, "number of distinct user IDs")
-	messagesFlag := flag.Int("messages", 100000, "total messages per topic")
+	messagesFlag := flag.Int("messages", 1000, "total messages per topic")
 	topicUserFlag := flag.String("topic-user", "task_topics/by_user", "user-partitioned topic path")
 	topicIDFlag := flag.String("topic-id", "task_topics/by_message_id", "message-ID-partitioned topic path")
 	flag.Parse()
@@ -71,26 +71,41 @@ func main() {
 	producer := NewProducer(db)
 	messages := producer.Generate(*messagesFlag, *usersFlag, sampler)
 
-	// Publish to both topics.
-	if err := producer.Publish(ctx, messages, topicUser, func(m BenchMessage) string {
-		return m.UserID.String()
-	}); err != nil {
-		if ctx.Err() != nil {
-			os.Exit(1)
-		}
-		slog.Error("publish to by_user failed", "err", err)
-		os.Exit(1)
+	// Publish to both topics in parallel.
+	// Reserve two lines: producer 0 uses line offset 1 (one above cursor),
+	// producer 1 uses line offset 0 (current line). Print two blank lines first.
+	fmt.Print("\n\n")
+	type pubOut struct {
+		result ProducerResult
+		err    error
 	}
+	pubCh := make(chan pubOut, 2)
+	go func() {
+		r, err := producer.Publish(ctx, "publish by_user", messages, topicUser, 1, func(m BenchMessage) string {
+			return m.UserID.String()
+		})
+		pubCh <- pubOut{r, err}
+	}()
+	go func() {
+		r, err := producer.Publish(ctx, "publish by_message_id", messages, topicID, 0, func(m BenchMessage) string {
+			return m.ID.String()
+		})
+		pubCh <- pubOut{r, err}
+	}()
 
-	if err := producer.Publish(ctx, messages, topicID, func(m BenchMessage) string {
-		return m.ID.String()
-	}); err != nil {
-		if ctx.Err() != nil {
+	var producerResults []ProducerResult
+	for range 2 {
+		out := <-pubCh
+		if out.err != nil {
+			if ctx.Err() != nil {
+				os.Exit(1)
+			}
+			slog.Error("publish failed", "err", out.err)
 			os.Exit(1)
 		}
-		slog.Error("publish to by_message_id failed", "err", err)
-		os.Exit(1)
+		producerResults = append(producerResults, out.result)
 	}
+	fmt.Println() // leave cursor past the two producer lines
 
 	if ctx.Err() != nil {
 		os.Exit(1)
@@ -174,7 +189,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	printTable(results)
+	printTable(producerResults, results)
 }
 
 // verifyStatsSum queries SUM(a)+SUM(b)+SUM(c) and warns if it differs from expected.
@@ -208,7 +223,7 @@ func resetStats(ctx context.Context, db *ydb.Driver) {
 }
 
 // printTable writes the Unicode box-drawing comparison table to stdout.
-func printTable(results []ScenarioResult) {
+func printTable(producers []ProducerResult, results []ScenarioResult) {
 	const (
 		scenarioW  = 30
 		messagesW  = 10
@@ -217,23 +232,20 @@ func printTable(results []ScenarioResult) {
 		msgPerSecW = 9
 	)
 
-	sep := func(left, mid, right, fill string, widths ...int) string {
-		parts := make([]string, len(widths))
+	widths := []int{scenarioW - 1, messagesW - 1, tliW - 1, durationW - 1, msgPerSecW - 1}
+
+	sep := func(left, mid, right, fill string) string {
+		s := left
 		for i, w := range widths {
-			parts[i] = strings.Repeat(fill, w)
-		}
-		result := left
-		for i, p := range parts {
 			if i > 0 {
-				result += mid
+				s += mid
 			}
-			result += p
+			s += strings.Repeat(fill, w)
 		}
-		return result + right
+		return s + right
 	}
 
 	row := func(cols ...string) string {
-		widths := []int{scenarioW - 1, messagesW - 1, tliW - 1, durationW - 1, msgPerSecW - 1}
 		s := "│"
 		for i, col := range cols {
 			w := widths[i]
@@ -246,12 +258,22 @@ func printTable(results []ScenarioResult) {
 		return s
 	}
 
-	top := sep("┌", "┬", "┐", "─", scenarioW, messagesW, tliW, durationW, msgPerSecW)
-	mid := sep("├", "┼", "┤", "─", scenarioW, messagesW, tliW, durationW, msgPerSecW)
-	bot := sep("└", "┴", "┘", "─", scenarioW, messagesW, tliW, durationW, msgPerSecW)
+	top := sep("┌", "┬", "┐", "─")
+	mid := sep("├", "┼", "┤", "─")
+	bot := sep("└", "┴", "┘", "─")
 
 	fmt.Println(top)
 	fmt.Println(row("Scenario", "Messages", "TLI Errors", "Duration", "msg/sec"))
+	fmt.Println(mid)
+	for _, r := range producers {
+		fmt.Println(row(
+			r.Name,
+			fmt.Sprintf("%d", r.Messages),
+			"-",
+			formatDuration(r.Duration),
+			fmt.Sprintf("%.0f", r.MsgPerSec),
+		))
+	}
 	fmt.Println(mid)
 	for _, r := range results {
 		fmt.Println(row(

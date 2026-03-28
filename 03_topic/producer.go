@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twmb/murmur3"
@@ -59,7 +61,9 @@ func (p *Producer) Generate(n, users int, sampler *UserIDSampler) []BenchMessage
 
 // Publish writes all messages to topicPath, routing each to the partition determined
 // by hashKey(keyFn(msg), 10). Writers are flushed and closed on completion.
-func (p *Producer) Publish(ctx context.Context, messages []BenchMessage, topicPath string, keyFn func(BenchMessage) string) error {
+// It displays live progress via LiveStats and returns a ProducerResult.
+// lineOffset controls which pre-allocated line above the cursor to use (0 = current line).
+func (p *Producer) Publish(ctx context.Context, name string, messages []BenchMessage, topicPath string, lineOffset int, keyFn func(BenchMessage) string) (ProducerResult, error) {
 	const partitions = 10
 
 	writers := make([]*safeWriter, partitions)
@@ -72,7 +76,7 @@ func (p *Producer) Publish(ctx context.Context, messages []BenchMessage, topicPa
 			for j := 0; j < i; j++ {
 				_ = writers[j].w.Close(context.Background())
 			}
-			return fmt.Errorf("StartWriter partition %d: %w", i, err)
+			return ProducerResult{}, fmt.Errorf("StartWriter partition %d: %w", i, err)
 		}
 		writers[i] = &safeWriter{w: w}
 	}
@@ -84,18 +88,39 @@ func (p *Producer) Publish(ctx context.Context, messages []BenchMessage, topicPa
 
 	slog.Info("producer started", "topic", topicPath, "partitions", partitions)
 
+	var counter atomic.Int64
+	live := NewLiveStatsAt(name, int64(len(messages)), &counter, nil, lineOffset)
+	live.Start()
+
+	start := time.Now()
 	for i := range messages {
 		key := keyFn(messages[i])
 		partitionIdx := hashKey(key, partitions)
 		data, err := json.Marshal(messages[i])
 		if err != nil {
-			return fmt.Errorf("json.Marshal message %d: %w", i, err)
+			live.Stop()
+			return ProducerResult{}, fmt.Errorf("json.Marshal message %d: %w", i, err)
 		}
 		if err := writers[partitionIdx].write(ctx, data); err != nil {
-			return fmt.Errorf("write to partition %d: %w", partitionIdx, err)
+			live.Stop()
+			return ProducerResult{}, fmt.Errorf("write to partition %d: %w", partitionIdx, err)
 		}
+		counter.Add(1)
 	}
+	live.Stop()
+	duration := time.Since(start)
 
 	slog.Info("publish complete", "topic", topicPath, "messages", len(messages))
-	return nil
+
+	n := int64(len(messages))
+	var msgPerSec float64
+	if duration.Seconds() > 0 {
+		msgPerSec = float64(n) / duration.Seconds()
+	}
+	return ProducerResult{
+		Name:      name,
+		Messages:  n,
+		Duration:  duration,
+		MsgPerSec: msgPerSec,
+	}, nil
 }

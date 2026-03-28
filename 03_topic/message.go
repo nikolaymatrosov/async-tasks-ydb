@@ -21,3 +21,11 @@ type ScenarioResult struct {
 	Duration  time.Duration
 	MsgPerSec float64
 }
+
+// ProducerResult holds metrics collected for one publish run.
+type ProducerResult struct {
+	Name      string
+	Messages  int64
+	Duration  time.Duration
+	MsgPerSec float64
+}
