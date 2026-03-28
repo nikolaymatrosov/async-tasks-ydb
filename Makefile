@@ -7,7 +7,8 @@ include .env
 export
 
 # Build the YDB connection string with goose parameters and IAM token
-YDB_CONNECTION_STRING := $(YDB_ENDPOINT)&go_query_mode=scripting&go_fake_tx=scripting&go_query_bind=declare,numeric&token=`yc iam create-token`
+YDB_ENDPOINT := $(shell cd terraform && terraform output -raw ydb_endpoint 2>/dev/null)
+YDB_CONNECTION_STRING := $(YDB_ENDPOINT)&go_query_mode=scripting&go_fake_tx=scripting&go_query_bind=declare,numeric&token=`yc iam create-token`&ca-file=/etc/ssl/certs/ydb-ca.crt
 
 # Apply all pending migrations
 migrate:
@@ -68,14 +69,15 @@ docker-pull-command:
 		echo "docker pull $$(cd terraform && terraform output -raw $$img)"; \
 	done
 
+MIGRATIONS_IMAGE := $(shell cd terraform && terraform output -raw migrations_image 2>/dev/null)	
+
 # Build migrations container image
 docker-build-migrations:
-	docker build -f Dockerfile.migrations -t cr.yandex/$(REGISTRY_ID)/migrations:latest .
-
+	docker build -f Dockerfile.migrations -t $(MIGRATIONS_IMAGE) .	
 # Push migrations container image to registry
 docker-push-migrations:
-	docker push cr.yandex/$(REGISTRY_ID)/migrations:latest
+	docker push $(MIGRATIONS_IMAGE)
 
 # Print ready-to-use docker run command for migrations
 docker-migrate-cmd:
-	@echo "docker run --rm cr.yandex/$(REGISTRY_ID)/migrations:latest '$(YDB_ENDPOINT)&go_query_mode=scripting&go_fake_tx=scripting&go_query_bind=declare,numeric&token=$$(yc iam create-token)' up"
+	@echo "docker run --rm $(MIGRATIONS_IMAGE) '$(YDB_CONNECTION_STRING)' up"

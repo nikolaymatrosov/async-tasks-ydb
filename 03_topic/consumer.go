@@ -39,10 +39,14 @@ func (c *Consumer) RunScenario(
 	tliCounter *atomic.Int64,
 	workload func(context.Context, BenchMessage) error,
 ) (ScenarioResult, error) {
+	fmt.Print("\n\n")
 	slog.Info("scenario started", "scenario", name)
 	start := time.Now()
 
 	var counter atomic.Int64
+
+	live := NewLiveStats(name, target, &counter, tliCounter)
+	live.Start()
 
 	scenarioCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -61,6 +65,7 @@ func (c *Consumer) RunScenario(
 	}
 
 	wg.Wait()
+	live.Stop()
 	close(errs)
 
 	duration := time.Since(start)
