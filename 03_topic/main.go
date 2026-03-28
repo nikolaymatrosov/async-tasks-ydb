@@ -46,7 +46,11 @@ func main() {
 	if saKeyFile := os.Getenv("YDB_SA_KEY_FILE"); saKeyFile != "" {
 		creds = yc.WithServiceAccountKeyFileCredentials(saKeyFile)
 	} else {
-		creds = yc.WithMetadataCredentials()
+		if os.Getenv("YDB_AUTH") == "none" {
+			creds = ydb.WithAnonymousCredentials()
+		} else {
+			creds = yc.WithMetadataCredentials()
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)

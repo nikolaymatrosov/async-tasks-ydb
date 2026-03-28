@@ -163,7 +163,7 @@ func (c *Consumer) runPartitionReader(
 // statsWorkload returns a workload function that increments the counter for
 // msg.Type using a serializable interactive transaction so that the
 // UPSERT…SELECT…LEFT JOIN read-modify-write is consistent.
-func statsWorkload(db *ydb.Driver, _ *atomic.Int64) func(context.Context, BenchMessage) error {
+func statsWorkload(db *ydb.Driver, tliCounter *atomic.Int64) func(context.Context, BenchMessage) error {
 	return func(ctx context.Context, msg BenchMessage) error {
 		var a, b, c int64
 		switch msg.Type {
@@ -175,7 +175,12 @@ func statsWorkload(db *ydb.Driver, _ *atomic.Int64) func(context.Context, BenchM
 			c = 1
 		}
 
+		attempt := 0
 		return db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
+			if attempt > 0 {
+				tliCounter.Add(1)
+			}
+			attempt++
 			return tx.Exec(ctx,
 				`UPSERT INTO stats
 				 SELECT
@@ -188,16 +193,15 @@ func statsWorkload(db *ydb.Driver, _ *atomic.Int64) func(context.Context, BenchM
 				query.WithParameters(
 					ydb.ParamsBuilder().
 						Param("$records").Any(types.ListValue(
-							types.StructValue(
-								types.StructFieldValue("user_id", types.UuidValue(msg.UserID)),
-								types.StructFieldValue("a", types.Int64Value(a)),
-								types.StructFieldValue("b", types.Int64Value(b)),
-								types.StructFieldValue("c", types.Int64Value(c)),
-							),
-						)).
+						types.StructValue(
+							types.StructFieldValue("user_id", types.UuidValue(msg.UserID)),
+							types.StructFieldValue("a", types.Int64Value(a)),
+							types.StructFieldValue("b", types.Int64Value(b)),
+							types.StructFieldValue("c", types.Int64Value(c)),
+						),
+					)).
 						Build(),
 				),
-				query.WithTxControl(query.TxControl(query.CommitTx())),
 			)
 		}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
 	}
