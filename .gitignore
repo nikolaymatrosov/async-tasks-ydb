@@ -1,5 +1,10 @@
 sa.json
 .idea
+
+# Go build artifacts
+*.exe
+*.test
+*.out
 findings.md
 progress.md
 task_plan.md
@@ -14,3 +19,5 @@ terraform/terraform.tfvars
 
 # Environment
 .env
+
+docs/
