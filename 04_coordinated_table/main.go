@@ -65,7 +65,7 @@ func main() {
 	defer stop()
 
 	// Open YDB driver.
-	db, err := ydb.Open(ctx, *endpointFlag+*databaseFlag,
+	db, err := ydb.Open(ctx, *endpointFlag,
 		creds,
 		yc.WithInternalCA(),
 	)
