@@ -29,8 +29,8 @@ resource "yandex_compute_instance_group" "workers" {
     metadata = {
       "docker-compose" = templatefile("${path.module}/docker-compose.yml.tpl", {
         coordinator_image = local.coordinator_image
-        ydb_endpoint      = var.ydb_endpoint
-        ydb_database      = var.ydb_database
+        ydb_endpoint      = yandex_ydb_database_dedicated.main.ydb_full_endpoint
+        ydb_database      = yandex_ydb_database_dedicated.main.database_path
         worker_rate       = var.worker_rate
       })
       "user-data" = <<-EOT

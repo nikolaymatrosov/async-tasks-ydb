@@ -10,10 +10,6 @@ variable "folder_id" {
   type        = string
 }
 
-variable "sa_key_file" {
-  description = "Path to service account key JSON file for Terraform provider auth"
-  type        = string
-}
 
 # Optional variables
 
@@ -95,16 +91,6 @@ variable "registry_name" {
 }
 
 # Feature 005: autoscaling deployment variables
-
-variable "ydb_endpoint" {
-  description = "YDB gRPC endpoint (e.g. grpcs://ydb.serverless.yandexcloud.net:2135)"
-  type        = string
-}
-
-variable "ydb_database" {
-  description = "YDB database path (e.g. /ru-central1/b1g.../etnXXX)"
-  type        = string
-}
 
 variable "ig_max_size" {
   description = "Maximum instance group size"
