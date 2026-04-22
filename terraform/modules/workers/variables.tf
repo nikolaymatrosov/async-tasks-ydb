@@ -93,9 +93,3 @@ variable "ig_measurement_duration" {
   type        = number
   default     = 60
 }
-
-variable "worker_rate" {
-  description = "Producer task injection rate (tasks/second)"
-  type        = number
-  default     = 115
-}

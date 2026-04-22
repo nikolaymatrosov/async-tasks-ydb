@@ -128,12 +128,6 @@ variable "ig_measurement_duration" {
   default     = 60
 }
 
-variable "worker_rate" {
-  description = "Producer task injection rate (tasks/second)"
-  type        = number
-  default     = 115
-}
-
 variable "producer_size" {
   description = "Fixed number of producer VMs"
   type        = number

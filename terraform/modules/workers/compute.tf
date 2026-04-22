@@ -31,18 +31,18 @@ resource "yandex_compute_instance_group" "workers" {
         coordinator_image = local.coordinator_image
         ydb_endpoint      = var.ydb_endpoint
         ydb_database      = var.ydb_database
-        worker_rate       = var.worker_rate
+        folder_id         = var.folder_id
       })
       "user-data" = <<-EOT
         #cloud-config
+        ${var.ssh_public_key != "" ? "users:\n  - name: yc-user\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    ssh_authorized_keys:\n      - ${var.ssh_public_key}" : ""}
         write_files:
-          - path: /etc/yandex-unified-agent/config.yml
+          - path: /home/yc-user/ua-config.yml
             permissions: '0644'
             content: |
               ${indent(6, templatefile("${path.module}/ua-config.yml.tpl", {
-      folder_id   = var.folder_id
-      metrics_url = "http://localhost:9090/metrics"
-      ssh_keys = var.ssh_public_key != "" ? "yc-user:${var.ssh_public_key}"  : ""
+              metrics_url = "http://localhost:9090/metrics"
+              folder_id   = var.folder_id
 }))}
         EOT
 }

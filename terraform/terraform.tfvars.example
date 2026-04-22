@@ -22,7 +22,6 @@ ydb_database = "/ru-central1/<cloud_id>/<db_id>"
 # ig_stabilization_duration = 300
 # ig_warmup_duration       = 120
 # ig_measurement_duration  = 60
-# worker_rate              = 115
 
 # Producer instance group (feature 007)
 # producer_size = 1    # Fixed number of producer VMs

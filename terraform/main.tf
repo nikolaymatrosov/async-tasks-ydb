@@ -55,8 +55,6 @@ module "workers" {
   ig_stabilization_duration = var.ig_stabilization_duration
   ig_warmup_duration        = var.ig_warmup_duration
   ig_measurement_duration   = var.ig_measurement_duration
-  worker_rate               = var.worker_rate
-
   registry_url       = module.db.registry_url
   service_account_id = module.db.service_account_id
   ydb_endpoint       = module.db.ydb_endpoint
