@@ -23,3 +23,7 @@ ydb_database = "/ru-central1/<cloud_id>/<db_id>"
 # ig_warmup_duration       = 120
 # ig_measurement_duration  = 60
 # worker_rate              = 115
+
+# Producer instance group (feature 007)
+# producer_size = 1    # Fixed number of producer VMs
+# producer_rate = 100  # Task injection rate (tasks/second)

@@ -21,7 +21,7 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	endpointFlag := flag.String("endpoint", os.Getenv("YDB_ENDPOINT"), "YDB gRPC endpoint")
-	databaseFlag := flag.String("database", "", "YDB database path")
+	databaseFlag := flag.String("database", os.Getenv("YDB_DATABASE"), "YDB database path")
 	modeFlag := flag.String("mode", "", "producer or worker")
 	partitionsFlag := flag.Int("partitions", 256, "number of logical partitions")
 	coordinationPathFlag := flag.String("coordination-path", "", "coordination node path (default: <database>/04_coordinated_table)")

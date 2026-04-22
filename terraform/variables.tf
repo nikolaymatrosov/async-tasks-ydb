@@ -133,3 +133,15 @@ variable "worker_rate" {
   type        = number
   default     = 115
 }
+
+variable "producer_size" {
+  description = "Fixed number of producer VMs"
+  type        = number
+  default     = 1
+}
+
+variable "producer_rate" {
+  description = "Task injection rate (tasks/second) for the coordinated tasks producer"
+  type        = number
+  default     = 100
+}
