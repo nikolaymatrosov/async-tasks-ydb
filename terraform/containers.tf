@@ -13,6 +13,7 @@ locals {
   db_producer_image = "${local.registry_url}/db-producer:${data.external.git_hash.result.sha}"
   cdc_worker_image  = "${local.registry_url}/cdc-worker:${data.external.git_hash.result.sha}"
   topic_bench_image = "${local.registry_url}/topic-bench:${data.external.git_hash.result.sha}"
+  coordinator_image  = "${local.registry_url}/coordinator:${data.external.git_hash.result.sha}"
   migrations_image  = "${local.registry_url}/migrations:${data.external.git_hash.result.sha}"
 }
 
@@ -43,6 +44,16 @@ resource "null_resource" "topic_bench_image" {
 
   provisioner "local-exec" {
     command = "cd ${path.module}/.. && docker build --platform linux/amd64 --build-arg EXAMPLE=03_topic -t ${local.topic_bench_image} . && docker push ${local.topic_bench_image}"
+  }
+}
+
+resource "null_resource" "coordinator_image" {
+  triggers = {
+    git_sha = data.external.git_hash.result.sha
+  }
+
+  provisioner "local-exec" {
+    command = "cd ${path.module}/.. && docker build --platform linux/amd64 --build-arg EXAMPLE=04_coordinated_table -t ${local.coordinator_image} . && docker push ${local.coordinator_image}"
   }
 }
 

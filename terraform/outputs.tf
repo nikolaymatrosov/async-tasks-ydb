@@ -43,6 +43,11 @@ output "topic_bench_image" {
   value       = local.topic_bench_image
 }
 
+output "coordinator_image" {
+  description = "Container image for coordinator example"
+  value       = local.coordinator_image
+}
+
 output "migrations_image" {
   description = "Container image for goose migrations"
   value       = local.migrations_image
