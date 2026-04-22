@@ -14,6 +14,7 @@ type Stats struct {
 	partitionsOwned atomic.Int64
 	tasksProcessed  atomic.Int64
 	tasksLocked     atomic.Int64
+	tasksErrors     atomic.Int64
 	startTime       time.Time
 }
 
@@ -43,6 +44,7 @@ func (s *Stats) print() {
 	partitions := s.partitionsOwned.Load()
 	processed := s.tasksProcessed.Load()
 	locked := s.tasksLocked.Load()
+	errors := s.tasksErrors.Load()
 
 	// Structured log for machine consumption.
 	slog.Info("worker stats",
@@ -50,6 +52,7 @@ func (s *Stats) print() {
 		"partitions_owned", partitions,
 		"tasks_processed", processed,
 		"tasks_locked", locked,
+		"tasks_errors", errors,
 		"uptime", uptime.String(),
 	)
 
@@ -58,6 +61,7 @@ func (s *Stats) print() {
 	fmt.Printf("Partitions owned: %6d\n", partitions)
 	fmt.Printf("Tasks processed:  %6d\n", processed)
 	fmt.Printf("Tasks locked:     %6d\n", locked)
+	fmt.Printf("Tasks errors:     %6d\n", errors)
 	fmt.Printf("Uptime:           %6s\n", uptime)
 	fmt.Printf("========================\n")
 }

@@ -93,3 +93,57 @@ variable "registry_name" {
   type        = string
   default     = "async-tasks-registry"
 }
+
+# Feature 005: autoscaling deployment variables
+
+variable "ydb_endpoint" {
+  description = "YDB gRPC endpoint (e.g. grpcs://ydb.serverless.yandexcloud.net:2135)"
+  type        = string
+}
+
+variable "ydb_database" {
+  description = "YDB database path (e.g. /ru-central1/b1g.../etnXXX)"
+  type        = string
+}
+
+variable "ig_max_size" {
+  description = "Maximum instance group size"
+  type        = number
+  default     = 5
+}
+
+variable "ig_min_zone_size" {
+  description = "Minimum instances per availability zone"
+  type        = number
+  default     = 1
+}
+
+variable "ig_cpu_target" {
+  description = "CPU utilisation target (%) for scale-out"
+  type        = number
+  default     = 70
+}
+
+variable "ig_stabilization_duration" {
+  description = "Seconds to wait before allowing scale-in"
+  type        = number
+  default     = 300
+}
+
+variable "ig_warmup_duration" {
+  description = "Seconds a new instance is excluded from autoscale averaging"
+  type        = number
+  default     = 120
+}
+
+variable "ig_measurement_duration" {
+  description = "Averaging window in seconds for autoscale"
+  type        = number
+  default     = 60
+}
+
+variable "worker_rate" {
+  description = "Producer task injection rate (tasks/second)"
+  type        = number
+  default     = 115
+}

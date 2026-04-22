@@ -13,14 +13,9 @@ output "registry_id" {
   value       = yandex_container_registry.main.id
 }
 
-output "vm_external_ip" {
-  description = "Public IP of the COI VM (for SSH access)"
-  value       = yandex_compute_instance.coi_vm.network_interface[0].nat_ip_address
-}
-
-output "vm_internal_ip" {
-  description = "Private IP of the COI VM"
-  value       = yandex_compute_instance.coi_vm.network_interface[0].ip_address
+output "instance_group_id" {
+  description = "ID of the created instance group"
+  value       = yandex_compute_instance_group.workers.id
 }
 
 output "service_account_id" {

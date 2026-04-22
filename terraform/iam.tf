@@ -14,3 +14,9 @@ resource "yandex_resourcemanager_folder_iam_member" "ydb_editor" {
   role      = "ydb.editor"
   member    = "serviceAccount:${yandex_iam_service_account.coi_vm.id}"
 }
+
+resource "yandex_resourcemanager_folder_iam_member" "monitoring_editor" {
+  folder_id = var.folder_id
+  role      = "monitoring.editor"
+  member    = "serviceAccount:${yandex_iam_service_account.coi_vm.id}"
+}

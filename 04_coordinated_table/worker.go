@@ -136,6 +136,7 @@ func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context,
 			if ctx.Err() != nil || leaseCtx.Err() != nil {
 				return
 			}
+			w.stats.tasksErrors.Add(1)
 			slog.Warn("lock task failed", "worker_id", w.workerID, "partition_id", partitionID, "err", err)
 			w.sleep(ctx, leaseCtx, backoff)
 			backoff = minDuration(backoff*2, w.backoffMax)
@@ -293,6 +294,7 @@ WHERE partition_id = $partition_id
 	}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
 
 	if err != nil {
+		w.stats.tasksErrors.Add(1)
 		slog.Warn("task complete failed",
 			"worker_id", w.workerID,
 			"task_id", task.id,

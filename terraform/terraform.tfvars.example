@@ -3,6 +3,10 @@ cloud_id    = "b1g..."
 folder_id   = "b1g..."
 sa_key_file = "../sa.json"
 
+# Required: YDB connection (feature 005)
+ydb_endpoint = "grpcs://ydb.serverless.yandexcloud.net:2135"
+ydb_database = "/ru-central1/<cloud_id>/<db_id>"
+
 # Optional: override defaults
 # zone           = "ru-central1-a"
 # vm_cores       = 2
@@ -10,3 +14,12 @@ sa_key_file = "../sa.json"
 # ssh_public_key = "ssh-ed25519 AAAA..."
 # ydb_name       = "async-tasks-ydb"
 # registry_name  = "async-tasks-registry"
+
+# Optional: autoscaling tuning (feature 005)
+# ig_max_size              = 5
+# ig_min_zone_size         = 1
+# ig_cpu_target            = 70
+# ig_stabilization_duration = 300
+# ig_warmup_duration       = 120
+# ig_measurement_duration  = 60
+# worker_rate              = 115

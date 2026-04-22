@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,6 +29,7 @@ func main() {
 	lockDurationFlag := flag.Duration("lock-duration", 5*time.Second, "worker: lock expiry duration")
 	backoffMinFlag := flag.Duration("backoff-min", 50*time.Millisecond, "worker: initial backoff on empty poll")
 	backoffMaxFlag := flag.Duration("backoff-max", 5*time.Second, "worker: max backoff on empty poll")
+	metricsPortFlag := flag.Int("metrics-port", 9090, "port for Prometheus /metrics endpoint")
 	flag.Parse()
 
 	// Validate required flags.
@@ -87,11 +89,18 @@ func main() {
 	}
 	slog.Info("coordination node ready", "path", coordinationPath)
 
+	workerID := newUUID()
+	stats := newStats(workerID)
+
+	addr := fmt.Sprintf(":%d", *metricsPortFlag)
+	go http.ListenAndServe(addr, metricsHandler(stats, workerID)) //nolint:errcheck
+	slog.Info("metrics server started", "addr", addr)
+
 	switch *modeFlag {
 	case "producer":
 		runProducer(ctx, db, *rateFlag, *partitionsFlag)
 	case "worker":
-		runWorker(ctx, db, coordinationPath, *partitionsFlag, *lockDurationFlag, *backoffMinFlag, *backoffMaxFlag)
+		runWorker(ctx, db, coordinationPath, *partitionsFlag, *lockDurationFlag, *backoffMinFlag, *backoffMaxFlag, workerID, stats)
 	}
 
 	// Ensure clean exit after context cancellation.
@@ -109,11 +118,10 @@ func runWorker(
 	lockDuration time.Duration,
 	backoffMin time.Duration,
 	backoffMax time.Duration,
+	workerID string,
+	stats *Stats,
 ) {
-	workerID := newUUID()
 	slog.Info("worker starting", "worker_id", workerID)
-
-	stats := newStats(workerID)
 	go stats.display(ctx)
 
 	rebalancer := newRebalancer(db, coordinationPath, workerID, partitions)
