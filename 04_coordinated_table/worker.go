@@ -88,13 +88,13 @@ func (w *Worker) run(ctx context.Context, partitionCh <-chan partitionEvent) {
 				partitions[evt.partitionID] = &partitionState{cancel: cancel, done: done}
 				mu.Unlock()
 
-				w.stats.partitionsOwned.Add(1)
-				slog.Info("worker started", "worker_id", w.workerID, "partitions_owned", w.stats.partitionsOwned.Load())
+				w.stats.partitions.Add(1)
+				slog.Info("worker started", "worker_id", w.workerID, "partitions_owned", readGauge(w.stats.partitions))
 
 				go func(partitionID int, leaseCtx context.Context) {
 					defer close(done)
 					defer func() {
-						w.stats.partitionsOwned.Add(-1)
+						w.stats.partitions.Add(-1)
 						mu.Lock()
 						delete(partitions, partitionID)
 						mu.Unlock()
@@ -136,7 +136,7 @@ func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context,
 			if ctx.Err() != nil || leaseCtx.Err() != nil {
 				return
 			}
-			w.stats.tasksErrors.Add(1)
+			w.stats.errors.Add(1)
 			slog.Warn("lock task failed", "worker_id", w.workerID, "partition_id", partitionID, "err", err)
 			w.sleep(ctx, leaseCtx, backoff)
 			backoff = minDuration(backoff*2, w.backoffMax)
@@ -152,7 +152,7 @@ func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context,
 
 		// Task locked — reset backoff and process asynchronously.
 		backoff = w.backoffMin
-		w.stats.tasksLocked.Add(1)
+		w.stats.locked.Add(1)
 		slog.Info("task locked",
 			"worker_id", w.workerID,
 			"partition_id", task.partitionID,
@@ -294,7 +294,7 @@ WHERE partition_id = $partition_id
 	}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
 
 	if err != nil {
-		w.stats.tasksErrors.Add(1)
+		w.stats.errors.Add(1)
 		slog.Warn("task complete failed",
 			"worker_id", w.workerID,
 			"task_id", task.id,
@@ -303,7 +303,7 @@ WHERE partition_id = $partition_id
 		return
 	}
 
-	w.stats.tasksProcessed.Add(1)
+	w.stats.processed.Add(1)
 	slog.Info("task completed",
 		"worker_id", w.workerID,
 		"partition_id", task.partitionID,

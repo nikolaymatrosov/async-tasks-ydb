@@ -93,7 +93,7 @@ func main() {
 	stats := newStats(workerID)
 
 	addr := fmt.Sprintf(":%d", *metricsPortFlag)
-	go http.ListenAndServe(addr, metricsHandler(stats, workerID)) //nolint:errcheck
+	go http.ListenAndServe(addr, metricsHandler(stats)) //nolint:errcheck
 	slog.Info("metrics server started", "addr", addr)
 
 	switch *modeFlag {
