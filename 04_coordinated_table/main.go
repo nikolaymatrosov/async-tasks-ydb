@@ -26,6 +26,8 @@ func main() {
 	partitionsFlag := flag.Int("partitions", 256, "number of logical partitions")
 	coordinationPathFlag := flag.String("coordination-path", "", "coordination node path (default: <database>/04_coordinated_table)")
 	rateFlag := flag.Int("rate", 100, "producer: tasks per second")
+	batchWindowFlag := flag.Duration("batch-window", 100*time.Millisecond, "producer: batch window duration")
+	reportIntervalFlag := flag.Duration("report-interval", 5*time.Second, "producer: throughput report interval")
 	lockDurationFlag := flag.Duration("lock-duration", 5*time.Second, "worker: lock expiry duration")
 	backoffMinFlag := flag.Duration("backoff-min", 50*time.Millisecond, "worker: initial backoff on empty poll")
 	backoffMaxFlag := flag.Duration("backoff-max", 5*time.Second, "worker: max backoff on empty poll")
@@ -90,16 +92,20 @@ func main() {
 	slog.Info("coordination node ready", "path", coordinationPath)
 
 	workerID := newUUID()
-	stats := newStats(workerID)
-
 	addr := fmt.Sprintf(":%d", *metricsPortFlag)
-	go http.ListenAndServe(addr, metricsHandler(stats)) //nolint:errcheck
-	slog.Info("metrics server started", "addr", addr)
 
 	switch *modeFlag {
 	case "producer":
-		runProducer(ctx, db, *rateFlag, *partitionsFlag)
+		ps := newProducerStats(float64(*rateFlag), *batchWindowFlag)
+		ps.up.Set(1)
+		defer ps.up.Set(0)
+		go http.ListenAndServe(addr, metricsHandler(ps.registry)) //nolint:errcheck
+		slog.Info("metrics server started", "addr", addr)
+		runProducer(ctx, db, *rateFlag, *partitionsFlag, *batchWindowFlag, *reportIntervalFlag, ps)
 	case "worker":
+		stats := newStats(workerID)
+		go http.ListenAndServe(addr, metricsHandler(stats.registry)) //nolint:errcheck
+		slog.Info("metrics server started", "addr", addr)
 		runWorker(ctx, db, coordinationPath, *partitionsFlag, *lockDurationFlag, *backoffMinFlag, *backoffMaxFlag, workerID, stats)
 	}
 
@@ -146,8 +152,8 @@ func runWorker(
 }
 
 // runProducer is the entry point for producer mode — declared here, implemented in producer.go.
-func runProducer(ctx context.Context, db *ydb.Driver, rate int, partitions int) {
-	produce(ctx, db, rate, partitions)
+func runProducer(ctx context.Context, db *ydb.Driver, rate int, partitions int, batchWindow time.Duration, reportInterval time.Duration, ps *ProducerStats) {
+	produce(ctx, db, rate, partitions, batchWindow, reportInterval, ps)
 }
 
 // newUUID generates a new UUID string.
