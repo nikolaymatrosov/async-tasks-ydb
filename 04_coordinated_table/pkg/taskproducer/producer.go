@@ -1,4 +1,4 @@
-package main
+package taskproducer
 
 import (
 	"context"
@@ -12,6 +12,9 @@ import (
 	ydb "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/query"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
+
+	"async-tasks-ydb/04_coordinated_table/pkg/metrics"
+	"async-tasks-ydb/04_coordinated_table/pkg/uid"
 )
 
 type taskRow struct {
@@ -33,7 +36,7 @@ func buildBatch(ctx context.Context, batchSize int, partitions int) []taskRow {
 		default:
 		}
 
-		taskID, err := generateUUID()
+		taskID, err := uid.GenerateUUID()
 		if err != nil {
 			continue
 		}
@@ -89,13 +92,12 @@ func upsertBatch(ctx context.Context, db *ydb.Driver, batch []taskRow) error {
 	)
 }
 
-// produce runs the fixed-window batch loop until ctx is cancelled.
-func produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batchWindow time.Duration, reportInterval time.Duration, ps *ProducerStats) {
+// Produce runs the fixed-window batch loop until ctx is cancelled.
+func Produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batchWindow time.Duration, reportInterval time.Duration, ps *metrics.ProducerStats) {
 	if rate <= 0 {
 		rate = 1
 	}
 
-	// Low-rate edge case: when rate*window < 1 row, use a longer effective window.
 	effectiveWindow := batchWindow
 	targetBatchSize := int(math.Round(float64(rate) * batchWindow.Seconds()))
 	if targetBatchSize < 1 {
@@ -103,15 +105,14 @@ func produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batc
 		effectiveWindow = time.Duration(float64(time.Second) / float64(rate))
 	}
 
-	ps.targetBatchSize.Set(float64(targetBatchSize))
-	ps.targetRate.Set(float64(rate))
-	ps.windowSeconds.Set(batchWindow.Seconds())
+	ps.TargetBatchSize.Set(float64(targetBatchSize))
+	ps.TargetRate.Set(float64(rate))
+	ps.WindowSeconds.Set(batchWindow.Seconds())
 
 	slog.Info("producer started", "rate", rate, "partitions", partitions, "batch_window", batchWindow, "target_batch_size", targetBatchSize)
 
 	var insertedTotal atomic.Int64
 
-	// Report goroutine (T009).
 	go func() {
 		ticker := time.NewTicker(reportInterval)
 		defer ticker.Stop()
@@ -125,7 +126,7 @@ func produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batc
 				delta := snapshot - lastSnapshot
 				lastSnapshot = snapshot
 				rateObserved := float64(delta) / reportInterval.Seconds()
-				ps.observedRate.Set(rateObserved)
+				ps.ObservedRate.Set(rateObserved)
 				slog.Info("producer stats",
 					"inserted_total", snapshot,
 					"inserted_delta", delta,
@@ -137,7 +138,6 @@ func produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batc
 		}
 	}()
 
-	// Batch loop.
 loop:
 	for ctx.Err() == nil {
 		windowStart := time.Now()
@@ -148,22 +148,21 @@ loop:
 				break loop
 			}
 			slog.Warn("upsert batch failed", "err", err)
-			ps.batchErrors.Inc()
+			ps.BatchErrors.Inc()
 			continue
 		}
 
 		n := int64(len(batch))
 		insertedTotal.Add(n)
-		ps.inserted.Add(float64(n))
-		ps.batches.Inc()
-		ps.batchSize.Observe(float64(n))
+		ps.Inserted.Add(float64(n))
+		ps.Batches.Inc()
+		ps.BatchSize.Observe(float64(n))
 
 		elapsed := time.Since(windowStart)
-		ps.batchDuration.Observe(elapsed.Seconds())
+		ps.BatchDuration.Observe(elapsed.Seconds())
 
-		// Backpressure: storage slower than window (T008).
 		if elapsed >= effectiveWindow {
-			ps.backpressure.Inc()
+			ps.Backpressure.Inc()
 		} else {
 			select {
 			case <-ctx.Done():
@@ -173,8 +172,7 @@ loop:
 		}
 	}
 
-	// Shutdown log (T010).
 	total := insertedTotal.Load()
-	finalRate := float64(total) / time.Since(ps.startTime).Seconds()
+	finalRate := float64(total) / time.Since(ps.StartTime).Seconds()
 	slog.Info("producer stopping", "total_inserted", total, "rate_observed", finalRate)
 }

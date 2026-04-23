@@ -11,7 +11,7 @@ data "external" "git_hash" {
 locals {
   cdc_worker_image  = "${var.registry_url}/cdc-worker:${data.external.git_hash.result.sha}"
   topic_bench_image = "${var.registry_url}/topic-bench:${data.external.git_hash.result.sha}"
-  coordinator_image = "${var.registry_url}/coordinator:${data.external.git_hash.result.sha}"
+  coordinator_image = "${var.registry_url}/coordinator-worker:${data.external.git_hash.result.sha}"
   migrations_image  = "${var.registry_url}/migrations:${data.external.git_hash.result.sha}"
 }
 
@@ -41,7 +41,7 @@ resource "null_resource" "coordinator_image" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${path.module}/../../.. && docker build --platform linux/amd64 --build-arg EXAMPLE=04_coordinated_table -t ${local.coordinator_image} . && docker push ${local.coordinator_image}"
+    command = "cd ${path.module}/../../.. && docker build --platform linux/amd64 --build-arg EXAMPLE=04_coordinated_table/cmd/worker -t ${local.coordinator_image} . && docker push ${local.coordinator_image}"
   }
 }
 

@@ -46,8 +46,8 @@ CREATE TABLE coordinated_tasks (
     status       Utf8       NOT NULL,  -- pending | locked | completed
     payload      Utf8       NOT NULL,
     lock_value   Utf8,                 -- random UUID set on lock
-    locked_until Timestamp,            -- expiry for stale lock recovery
-    scheduled_at Timestamp,            -- optional future execution time
+    locked_until Timestamp,           -- expiry for stale lock recovery
+    scheduled_at Timestamp,           -- optional future execution time
     created_at   Timestamp  NOT NULL,
     done_at      Timestamp,
     PRIMARY KEY (partition_id, priority, id)
@@ -65,61 +65,97 @@ goose -dir ./migrations ydb \
   "grpc://localhost:2136/local?go_query_mode=scripting&go_fake_tx=scripting&go_query_bind=declare,numeric" up
 ```
 
-### 2. Run the producer
+### 2. Build both binaries
 
 ```bash
-YDB_ANONYMOUS_CREDENTIALS=1 go run ./04_coordinated_table/ \
+# From repo root
+go build -o /dev/null ./04_coordinated_table/cmd/producer/
+go build -o /dev/null ./04_coordinated_table/cmd/worker/
+```
+
+### 3. Run the producer
+
+```bash
+YDB_ANONYMOUS_CREDENTIALS=1 go run ./04_coordinated_table/cmd/producer/ \
   --endpoint grpc://localhost:2136 \
   --database /local \
-  --mode producer \
   --rate 100
 ```
 
-### 3. Run workers
+### 4. Run workers
 
 Start multiple workers in separate terminals:
 
 ```bash
-YDB_ANONYMOUS_CREDENTIALS=1 go run ./04_coordinated_table/ \
+YDB_ANONYMOUS_CREDENTIALS=1 go run ./04_coordinated_table/cmd/worker/ \
   --endpoint grpc://localhost:2136 \
-  --database /local \
-  --mode worker
+  --database /local
 ```
 
-### 4. Observe rebalancing
+### 5. Observe rebalancing
 
 - Kill a worker (Ctrl+C). Remaining workers pick up its partitions within ~5s.
 - Start a new worker. Existing workers release excess partitions to share with the newcomer.
 
 ## CLI Flags
 
-| Flag                  | Default                           | Description                           |
-|-----------------------|-----------------------------------|---------------------------------------|
-| `--endpoint`          | `$YDB_ENDPOINT`                   | YDB gRPC endpoint (required)          |
-| `--database`          | —                                 | YDB database path (required)          |
-| `--mode`              | —                                 | `producer` or `worker` (required)     |
-| `--partitions`        | `256`                             | Number of logical partitions          |
-| `--coordination-path` | `<database>/04_coordinated_table` | Coordination node path                |
-| `--rate`              | `100`                             | Producer: tasks per second            |
-| `--lock-duration`     | `5s`                              | Worker: lock expiry duration          |
-| `--backoff-min`       | `50ms`                            | Worker: initial backoff on empty poll |
-| `--backoff-max`       | `5s`                              | Worker: max backoff on empty poll     |
+### Producer (`cmd/producer/`)
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--endpoint` | `$YDB_ENDPOINT` | YDB gRPC endpoint (required) |
+| `--database` | `$YDB_DATABASE` | YDB database path (required) |
+| `--partitions` | `256` | Number of logical partitions |
+| `--coordination-path` | `<database>/04_coordinated_table` | Coordination node path (unused; kept for parity) |
+| `--rate` | `100` | Target tasks per second |
+| `--batch-window` | `100ms` | Batch accumulation window |
+| `--report-interval` | `5s` | Throughput reporting interval |
+| `--metrics-port` | `9090` | Prometheus `/metrics` port |
+
+### Worker (`cmd/worker/`)
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--endpoint` | `$YDB_ENDPOINT` | YDB gRPC endpoint (required) |
+| `--database` | `$YDB_DATABASE` | YDB database path (required) |
+| `--partitions` | `256` | Number of logical partitions |
+| `--coordination-path` | `<database>/04_coordinated_table` | Coordination node path |
+| `--lock-duration` | `5s` | Lock expiry duration per task |
+| `--backoff-min` | `50ms` | Initial backoff on empty poll |
+| `--backoff-max` | `5s` | Maximum backoff on empty poll |
+| `--metrics-port` | `9090` | Prometheus `/metrics` port |
 
 ## Environment Variables
 
-| Variable                    | Description                                   |
-|-----------------------------|-----------------------------------------------|
-| `YDB_ENDPOINT`              | Alternative to `--endpoint` flag              |
-| `YDB_SA_KEY_FILE`           | Path to service account key file (cloud auth) |
-| `YDB_ANONYMOUS_CREDENTIALS` | Set to `1` for local unauthenticated access   |
+| Variable | Description |
+| --- | --- |
+| `YDB_ENDPOINT` | Alternative to `--endpoint` flag |
+| `YDB_SA_KEY_FILE` | Path to service account key file (cloud auth) |
+| `YDB_ANONYMOUS_CREDENTIALS` | Set to `1` for local unauthenticated access |
 
 ## File Structure
 
-| File            | Purpose                                                              |
-|-----------------|----------------------------------------------------------------------|
-| `main.go`       | Entry point, flag parsing, YDB connection, coordination node setup   |
-| `producer.go`   | Task insertion with murmur3 hash routing and random priority         |
-| `worker.go`     | Per-partition task polling, locking, completion                      |
-| `rebalancer.go` | Semaphore-based partition acquisition, membership watch, rebalancing |
-| `display.go`    | Periodic stats output (structured JSON + plain text)                 |
-| `utils.go`      | UUID generation helper                                               |
+```text
+04_coordinated_table/
+├── cmd/
+│   ├── producer/
+│   │   └── main.go        ← producer entry point (flags, ydbconn.Open, metrics, taskproducer.Produce)
+│   └── worker/
+│       └── main.go        ← worker entry point (flags, ydbconn.Open, CreateNode, metrics, Worker.Run)
+├── pkg/
+│   ├── uid/
+│   │   └── uid.go         ← GenerateUUID() (string, error)
+│   ├── metrics/
+│   │   ├── handler.go     ← Handler(registry) http.Handler
+│   │   ├── worker_stats.go ← Stats, NewStats, Display
+│   │   └── producer_stats.go ← ProducerStats, NewProducerStats
+│   ├── rebalancer/
+│   │   └── rebalancer.go  ← Rebalancer, PartitionEvent, NewRebalancer, Start, Stop
+│   ├── taskworker/
+│   │   └── worker.go      ← Worker, Run
+│   ├── taskproducer/
+│   │   └── producer.go    ← Produce
+│   └── ydbconn/
+│       └── conn.go        ← Open(ctx, endpoint, database) (*ydb.Driver, error)
+└── README.md
+```

@@ -6,8 +6,6 @@ services:
       YDB_ENDPOINT: ${ydb_endpoint}
       YDB_DATABASE: ${ydb_database}
     command:
-      - "--mode"
-      - "worker"
       - "--metrics-port"
       - "9090"
     ports:

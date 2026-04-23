@@ -1,4 +1,4 @@
-package main
+package rebalancer
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 
 const registrySemaphore = "worker-registry"
 
-// partitionEvent is sent on the partition channel when a partition is gained or lost.
-type partitionEvent struct {
-	partitionID int
-	lease       coordination.Lease // non-nil = acquired; nil = released
+// PartitionEvent is sent on the partition channel when a partition is gained or lost.
+type PartitionEvent struct {
+	PartitionID int
+	Lease       coordination.Lease // non-nil = acquired; nil = released
 }
 
 // Rebalancer manages partition semaphore acquisition and dynamic rebalancing.
@@ -30,29 +30,29 @@ type Rebalancer struct {
 
 	mu             sync.Mutex
 	session        coordination.Session
-	leases         map[int]coordination.Lease // partitionID -> lease
+	leases         map[int]coordination.Lease
 	targetCapacity int64
 
-	partitionCh chan partitionEvent
+	partitionCh chan PartitionEvent
 	stopCh      chan struct{}
 	wg          sync.WaitGroup
 }
 
-func newRebalancer(db *ydb.Driver, coordinationPath, workerID string, partitionCount int) *Rebalancer {
+func NewRebalancer(db *ydb.Driver, coordinationPath, workerID string, partitionCount int) *Rebalancer {
 	return &Rebalancer{
 		db:               db,
 		coordinationPath: coordinationPath,
 		workerID:         workerID,
 		partitionCount:   partitionCount,
 		leases:           make(map[int]coordination.Lease),
-		partitionCh:      make(chan partitionEvent, partitionCount*2),
+		partitionCh:      make(chan PartitionEvent, partitionCount*2),
 		stopCh:           make(chan struct{}),
 	}
 }
 
-// start opens a coordination session, acquires the worker-registry semaphore,
+// Start opens a coordination session, acquires the worker-registry semaphore,
 // and begins greedy partition acquisition. Returns a channel of partition events.
-func (r *Rebalancer) start(ctx context.Context) (<-chan partitionEvent, error) {
+func (r *Rebalancer) Start(ctx context.Context) (<-chan PartitionEvent, error) {
 	session, err := r.db.Coordination().Session(ctx, r.coordinationPath,
 		options.WithDescription(fmt.Sprintf("worker-%s", r.workerID)),
 	)
@@ -64,7 +64,6 @@ func (r *Rebalancer) start(ctx context.Context) (<-chan partitionEvent, error) {
 	r.session = session
 	r.mu.Unlock()
 
-	// Acquire worker-registry semaphore (shared, count=1) to register presence.
 	registryLease, err := session.AcquireSemaphore(ctx, registrySemaphore, coordination.Shared,
 		options.WithEphemeral(true),
 		options.WithAcquireData([]byte(r.workerID)),
@@ -75,7 +74,6 @@ func (r *Rebalancer) start(ctx context.Context) (<-chan partitionEvent, error) {
 	}
 	slog.Info("worker registered", "worker_id", r.workerID)
 
-	// Initial worker count from registry.
 	workerCount := r.describeWorkerCount(ctx, session)
 	r.mu.Lock()
 	r.targetCapacity = ceilDiv(int64(r.partitionCount), int64(workerCount))
@@ -88,7 +86,6 @@ func (r *Rebalancer) start(ctx context.Context) (<-chan partitionEvent, error) {
 	return r.partitionCh, nil
 }
 
-// acquireLoop launches goroutines for all partitions and monitors for session loss / rebalancing.
 func (r *Rebalancer) acquireLoop(ctx context.Context, session coordination.Session, registryLease coordination.Lease) {
 	defer r.wg.Done()
 	defer func() { _ = registryLease.Release() }()
@@ -103,14 +100,11 @@ func (r *Rebalancer) acquireLoop(ctx context.Context, session coordination.Sessi
 		acquireCtx, cancelAcquire := context.WithCancel(ctx)
 		var acquireWg sync.WaitGroup
 
-		// Launch goroutines to compete for all partitions.
 		for i := 0; i < r.partitionCount; i++ {
-			// Skip partitions we already own.
 			r.mu.Lock()
 			_, owned := r.leases[i]
 			r.mu.Unlock()
 			if owned {
-				// Count owned partitions against local semaphore.
 				localSem.TryAcquire(1) //nolint:errcheck
 				continue
 			}
@@ -119,7 +113,6 @@ func (r *Rebalancer) acquireLoop(ctx context.Context, session coordination.Sessi
 			go r.tryAcquirePartition(acquireCtx, &acquireWg, session, i, localSem)
 		}
 
-		// Watch for membership changes and session loss.
 		watchCtx, cancelWatch := context.WithCancel(ctx)
 		memberChangeCh := make(chan int, 4)
 		go r.watchMembership(watchCtx, session, memberChangeCh)
@@ -134,7 +127,6 @@ func (r *Rebalancer) acquireLoop(ctx context.Context, session coordination.Sessi
 			return
 
 		case <-session.Context().Done():
-			// Session lost — cancel everything and restart.
 			slog.Warn("coordination session lost, restarting", "worker_id", r.workerID)
 			cancelAcquire()
 			cancelWatch()
@@ -157,7 +149,6 @@ func (r *Rebalancer) acquireLoop(ctx context.Context, session coordination.Sessi
 			r.session = newSession
 			r.mu.Unlock()
 			session = newSession
-			// Re-register in worker-registry.
 			registryLease, err = newSession.AcquireSemaphore(ctx, registrySemaphore, coordination.Shared,
 				options.WithEphemeral(true),
 				options.WithAcquireData([]byte(r.workerID)),
@@ -208,7 +199,6 @@ func (r *Rebalancer) acquireLoop(ctx context.Context, session coordination.Sessi
 	}
 }
 
-// tryAcquirePartition tries to acquire a single partition semaphore.
 func (r *Rebalancer) tryAcquirePartition(
 	ctx context.Context,
 	wg *sync.WaitGroup,
@@ -230,9 +220,7 @@ func (r *Rebalancer) tryAcquirePartition(
 		return
 	}
 
-	// Check local capacity.
 	if !localSem.TryAcquire(1) {
-		// At capacity — release immediately so another worker can grab it.
 		_ = lease.Release()
 		return
 	}
@@ -242,10 +230,9 @@ func (r *Rebalancer) tryAcquirePartition(
 	r.mu.Unlock()
 
 	slog.Info("partition acquired", "worker_id", r.workerID, "partition_id", partitionID)
-	r.partitionCh <- partitionEvent{partitionID: partitionID, lease: lease}
+	r.partitionCh <- PartitionEvent{PartitionID: partitionID, Lease: lease}
 }
 
-// watchMembership polls the worker-registry semaphore for owner count changes.
 func (r *Rebalancer) watchMembership(ctx context.Context, session coordination.Session, ch chan<- int) {
 	var lastCount int
 	for {
@@ -275,7 +262,6 @@ func (r *Rebalancer) watchMembership(ctx context.Context, session coordination.S
 	}
 }
 
-// describeWorkerCount returns current owner count of the worker-registry semaphore.
 func (r *Rebalancer) describeWorkerCount(ctx context.Context, session coordination.Session) int {
 	desc, err := session.DescribeSemaphore(ctx, registrySemaphore,
 		options.WithDescribeOwners(true),
@@ -286,8 +272,6 @@ func (r *Rebalancer) describeWorkerCount(ctx context.Context, session coordinati
 	return len(desc.Owners)
 }
 
-// releaseExcess releases owned partitions beyond newTarget (most recently acquired first — map iteration is random,
-// which is fine as an approximation).
 func (r *Rebalancer) releaseExcess(newTarget int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -307,13 +291,12 @@ func (r *Rebalancer) releaseExcess(newTarget int64) {
 			slog.Warn("lease release failed", "partition_id", partitionID, "err", err)
 		}
 		delete(r.leases, partitionID)
-		r.partitionCh <- partitionEvent{partitionID: partitionID, lease: nil}
+		r.partitionCh <- PartitionEvent{PartitionID: partitionID, Lease: nil}
 		slog.Info("partition released (rebalance)", "worker_id", r.workerID, "partition_id", partitionID)
 		released++
 	}
 }
 
-// releaseAll releases all owned leases and signals the partition channel.
 func (r *Rebalancer) releaseAll() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -322,24 +305,23 @@ func (r *Rebalancer) releaseAll() {
 		if err := lease.Release(); err != nil {
 			slog.Warn("lease release failed on shutdown", "partition_id", partitionID, "err", err)
 		}
-		r.partitionCh <- partitionEvent{partitionID: partitionID, lease: nil}
+		r.partitionCh <- PartitionEvent{PartitionID: partitionID, Lease: nil}
 		delete(r.leases, partitionID)
 	}
 }
 
-// releaseAllLocally clears the leases map without calling Release (session already dead).
 func (r *Rebalancer) releaseAllLocally() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	for partitionID := range r.leases {
-		r.partitionCh <- partitionEvent{partitionID: partitionID, lease: nil}
+		r.partitionCh <- PartitionEvent{PartitionID: partitionID, Lease: nil}
 		delete(r.leases, partitionID)
 	}
 }
 
-// stop signals the rebalancer to shut down and waits for it to finish.
-func (r *Rebalancer) stop() {
+// Stop signals the rebalancer to shut down and waits for it to finish.
+func (r *Rebalancer) Stop() {
 	close(r.stopCh)
 	r.wg.Wait()
 }

@@ -1,8 +1,8 @@
-package main
+package uid
 
 import "github.com/google/uuid"
 
-func generateUUID() (string, error) {
+func GenerateUUID() (string, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return "", err

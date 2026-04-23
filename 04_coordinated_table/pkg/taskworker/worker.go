@@ -1,4 +1,4 @@
-package main
+package taskworker
 
 import (
 	"context"
@@ -9,9 +9,12 @@ import (
 
 	ydb "github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/query"
+
+	"async-tasks-ydb/04_coordinated_table/pkg/metrics"
+	"async-tasks-ydb/04_coordinated_table/pkg/rebalancer"
+	"async-tasks-ydb/04_coordinated_table/pkg/uid"
 )
 
-// lockedTask holds the data of a task that was successfully locked.
 type lockedTask struct {
 	id          string
 	partitionID uint16
@@ -21,16 +24,16 @@ type lockedTask struct {
 
 // Worker processes tasks from owned partitions.
 type Worker struct {
-	db           *ydb.Driver
-	workerID     string
-	lockDuration time.Duration
-	backoffMin   time.Duration
-	backoffMax   time.Duration
-	stats        *Stats
+	DB           *ydb.Driver
+	WorkerID     string
+	LockDuration time.Duration
+	BackoffMin   time.Duration
+	BackoffMax   time.Duration
+	Stats        *metrics.Stats
 }
 
-// run listens for partition events and manages per-partition goroutines.
-func (w *Worker) run(ctx context.Context, partitionCh <-chan partitionEvent) {
+// Run listens for partition events and manages per-partition goroutines.
+func (w *Worker) Run(ctx context.Context, partitionCh <-chan rebalancer.PartitionEvent) {
 	type partitionState struct {
 		cancel context.CancelFunc
 		done   chan struct{}
@@ -42,7 +45,6 @@ func (w *Worker) run(ctx context.Context, partitionCh <-chan partitionEvent) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Cancel all partition goroutines and wait for them.
 			mu.Lock()
 			for _, ps := range partitions {
 				ps.cancel()
@@ -61,7 +63,6 @@ func (w *Worker) run(ctx context.Context, partitionCh <-chan partitionEvent) {
 
 		case evt, ok := <-partitionCh:
 			if !ok {
-				// Channel closed — rebalancer shut down.
 				mu.Lock()
 				for _, ps := range partitions {
 					ps.cancel()
@@ -79,33 +80,31 @@ func (w *Worker) run(ctx context.Context, partitionCh <-chan partitionEvent) {
 				return
 			}
 
-			if evt.lease != nil {
-				// Partition acquired — start processing goroutine.
+			if evt.Lease != nil {
 				partCtx, cancel := context.WithCancel(ctx)
 				done := make(chan struct{})
 
 				mu.Lock()
-				partitions[evt.partitionID] = &partitionState{cancel: cancel, done: done}
+				partitions[evt.PartitionID] = &partitionState{cancel: cancel, done: done}
 				mu.Unlock()
 
-				w.stats.partitions.Add(1)
-				slog.Info("worker started", "worker_id", w.workerID, "partitions_owned", readGauge(w.stats.partitions))
+				w.Stats.Partitions.Add(1)
+				slog.Info("worker started", "worker_id", w.WorkerID, "partitions_owned", metrics.ReadGauge(w.Stats.Partitions))
 
 				go func(partitionID int, leaseCtx context.Context) {
 					defer close(done)
 					defer func() {
-						w.stats.partitions.Add(-1)
+						w.Stats.Partitions.Add(-1)
 						mu.Lock()
 						delete(partitions, partitionID)
 						mu.Unlock()
 					}()
 					w.processPartition(partCtx, leaseCtx, partitionID)
-				}(evt.partitionID, evt.lease.Context())
+				}(evt.PartitionID, evt.Lease.Context())
 
 			} else {
-				// Partition released by rebalancer — cancel its goroutine and wait.
 				mu.Lock()
-				ps, exists := partitions[evt.partitionID]
+				ps, exists := partitions[evt.PartitionID]
 				mu.Unlock()
 				if exists {
 					ps.cancel()
@@ -116,17 +115,15 @@ func (w *Worker) run(ctx context.Context, partitionCh <-chan partitionEvent) {
 	}
 }
 
-// processPartition polls and processes tasks for a single partition until the context or lease is done.
 func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context, partitionID int) {
-	backoff := w.backoffMin
+	backoff := w.BackoffMin
 
 	for {
-		// Exit if our partition context or lease context is done.
 		select {
 		case <-ctx.Done():
 			return
 		case <-leaseCtx.Done():
-			slog.Info("partition lease lost", "worker_id", w.workerID, "partition_id", partitionID)
+			slog.Info("partition lease lost", "worker_id", w.WorkerID, "partition_id", partitionID)
 			return
 		default:
 		}
@@ -136,56 +133,46 @@ func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context,
 			if ctx.Err() != nil || leaseCtx.Err() != nil {
 				return
 			}
-			w.stats.errors.Add(1)
-			slog.Warn("lock task failed", "worker_id", w.workerID, "partition_id", partitionID, "err", err)
+			w.Stats.Errors.Add(1)
+			slog.Warn("lock task failed", "worker_id", w.WorkerID, "partition_id", partitionID, "err", err)
 			w.sleep(ctx, leaseCtx, backoff)
-			backoff = minDuration(backoff*2, w.backoffMax)
+			backoff = minDuration(backoff*2, w.BackoffMax)
 			continue
 		}
 
 		if task == nil {
-			// No eligible task — back off.
 			w.sleep(ctx, leaseCtx, backoff)
-			backoff = minDuration(backoff*2, w.backoffMax)
+			backoff = minDuration(backoff*2, w.BackoffMax)
 			continue
 		}
 
-		// Task locked — reset backoff and process asynchronously.
-		backoff = w.backoffMin
-		w.stats.locked.Add(1)
+		backoff = w.BackoffMin
+		w.Stats.Locked.Add(1)
 		slog.Info("task locked",
-			"worker_id", w.workerID,
+			"worker_id", w.WorkerID,
 			"partition_id", task.partitionID,
 			"task_id", task.id,
 			"priority", task.priority,
 		)
 
-		// Simulate 100ms work then mark complete.
 		go w.completeTask(context.Background(), task)
 	}
 }
 
 // lockNextTask selects and locks the highest-priority eligible task in a partition.
 // Returns nil, nil if no eligible task exists.
-//
-// Eligibility (US4 + US5):
-//   - status = 'pending'  OR  (status = 'locked' AND locked_until < CurrentUtcTimestamp())
-//   - scheduled_at IS NULL  OR  scheduled_at <= CurrentUtcTimestamp()
-//
-// ORDER BY priority DESC picks the most urgent task first.
 func (w *Worker) lockNextTask(ctx context.Context, partitionID int) (*lockedTask, error) {
-	lockValue, err := generateUUID()
+	lockValue, err := uid.GenerateUUID()
 	if err != nil {
 		return nil, err
 	}
-	lockedUntil := time.Now().UTC().Add(w.lockDuration)
+	lockedUntil := time.Now().UTC().Add(w.LockDuration)
 
 	var result *lockedTask
 
-	err = w.db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
+	err = w.DB.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
 		result = nil
 
-		// SELECT the highest-priority eligible task.
 		rs, err := tx.Query(ctx,
 			`DECLARE $partition_id AS Uint16;
 SELECT id, priority
@@ -216,7 +203,6 @@ LIMIT 1;`,
 
 		row, err := resultSet.NextRow(ctx)
 		if err != nil {
-			// No rows — no eligible task.
 			return nil
 		}
 
@@ -229,7 +215,6 @@ LIMIT 1;`,
 			return fmt.Errorf("scan task row: %w", err)
 		}
 
-		// UPDATE to lock the task.
 		if err := tx.Exec(ctx,
 			`DECLARE $id AS Utf8;
 DECLARE $partition_id AS Uint16;
@@ -268,12 +253,11 @@ WHERE partition_id = $partition_id
 	return result, nil
 }
 
-// completeTask simulates 100ms of work then marks the task completed.
 func (w *Worker) completeTask(ctx context.Context, task *lockedTask) {
 	time.Sleep(100 * time.Millisecond)
 
 	doneAt := time.Now().UTC()
-	err := w.db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
+	err := w.DB.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
 		return tx.Exec(ctx,
 			`DECLARE $id AS Utf8;
 DECLARE $partition_id AS Uint16;
@@ -294,24 +278,23 @@ WHERE partition_id = $partition_id
 	}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
 
 	if err != nil {
-		w.stats.errors.Add(1)
+		w.Stats.Errors.Add(1)
 		slog.Warn("task complete failed",
-			"worker_id", w.workerID,
+			"worker_id", w.WorkerID,
 			"task_id", task.id,
 			"err", err,
 		)
 		return
 	}
 
-	w.stats.processed.Add(1)
+	w.Stats.Processed.Add(1)
 	slog.Info("task completed",
-		"worker_id", w.workerID,
+		"worker_id", w.WorkerID,
 		"partition_id", task.partitionID,
 		"task_id", task.id,
 	)
 }
 
-// sleep waits for duration d, returning early if ctx or leaseCtx is done.
 func (w *Worker) sleep(ctx context.Context, leaseCtx context.Context, d time.Duration) {
 	timer := time.NewTimer(d)
 	defer timer.Stop()

@@ -9,7 +9,7 @@ data "external" "git_hash" {
 }
 
 locals {
-  coordinator_image = "${var.registry_url}/coordinator:${data.external.git_hash.result.sha}"
+  coordinator_image = "${var.registry_url}/coordinator-producer:${data.external.git_hash.result.sha}"
 }
 
 resource "null_resource" "coordinator_image" {
@@ -18,6 +18,6 @@ resource "null_resource" "coordinator_image" {
   }
 
   provisioner "local-exec" {
-    command = "cd ${path.module}/../../.. && docker build --platform linux/amd64 --build-arg EXAMPLE=04_coordinated_table -t ${local.coordinator_image} . && docker push ${local.coordinator_image}"
+    command = "cd ${path.module}/../../.. && docker build --platform linux/amd64 --build-arg EXAMPLE=04_coordinated_table/cmd/producer -t ${local.coordinator_image} . && docker push ${local.coordinator_image}"
   }
 }

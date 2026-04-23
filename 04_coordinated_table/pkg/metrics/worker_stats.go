@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"context"
@@ -13,17 +13,17 @@ import (
 
 // Stats holds Prometheus metrics shared between the worker and the display loop.
 type Stats struct {
-	workerID   string
-	startTime  time.Time
-	registry   *prometheus.Registry
-	processed  prometheus.Counter
-	locked     prometheus.Counter
-	errors     prometheus.Counter
-	partitions prometheus.Gauge
+	workerID  string
+	startTime time.Time
+	Registry  *prometheus.Registry
+	Processed prometheus.Counter
+	Locked    prometheus.Counter
+	Errors    prometheus.Counter
+	Partitions prometheus.Gauge
 	up         prometheus.Gauge
 }
 
-func newStats(workerID string) *Stats {
+func NewStats(workerID string) *Stats {
 	registry := prometheus.NewRegistry()
 
 	registry.MustRegister(
@@ -63,29 +63,29 @@ func newStats(workerID string) *Stats {
 	return &Stats{
 		workerID:   workerID,
 		startTime:  time.Now(),
-		registry:   registry,
-		processed:  processed,
-		locked:     locked,
-		errors:     errors,
-		partitions: partitions,
+		Registry:   registry,
+		Processed:  processed,
+		Locked:     locked,
+		Errors:     errors,
+		Partitions: partitions,
 		up:         up,
 	}
 }
 
-func readCounter(c prometheus.Counter) int64 {
+func ReadCounter(c prometheus.Counter) int64 {
 	var m dto.Metric
 	_ = c.Write(&m)
 	return int64(m.GetCounter().GetValue())
 }
 
-func readGauge(g prometheus.Gauge) int64 {
+func ReadGauge(g prometheus.Gauge) int64 {
 	var m dto.Metric
 	_ = g.Write(&m)
 	return int64(m.GetGauge().GetValue())
 }
 
-// display prints a periodic stats block every 5 seconds until ctx is done.
-func (s *Stats) display(ctx context.Context) {
+// Display prints a periodic stats block every 5 seconds until ctx is done.
+func (s *Stats) Display(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -100,12 +100,11 @@ func (s *Stats) display(ctx context.Context) {
 
 func (s *Stats) print() {
 	uptime := time.Since(s.startTime).Round(time.Second)
-	partitions := readGauge(s.partitions)
-	processed := readCounter(s.processed)
-	locked := readCounter(s.locked)
-	errors := readCounter(s.errors)
+	partitions := ReadGauge(s.Partitions)
+	processed := ReadCounter(s.Processed)
+	locked := ReadCounter(s.Locked)
+	errors := ReadCounter(s.Errors)
 
-	// Structured log for machine consumption.
 	slog.Info("worker stats",
 		"worker_id", s.workerID,
 		"partitions_owned", partitions,
@@ -115,7 +114,6 @@ func (s *Stats) print() {
 		"uptime", uptime.String(),
 	)
 
-	// Plain-text stats block for human consumption.
 	fmt.Printf("=== Worker %s Stats ===\n", s.workerID[:8])
 	fmt.Printf("Partitions owned: %6d\n", partitions)
 	fmt.Printf("Tasks processed:  %6d\n", processed)

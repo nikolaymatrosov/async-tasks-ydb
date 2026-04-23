@@ -1,4 +1,4 @@
-package main
+package metrics
 
 import (
 	"time"
@@ -9,22 +9,22 @@ import (
 
 // ProducerStats holds Prometheus metrics for producer mode.
 type ProducerStats struct {
-	registry        *prometheus.Registry
-	startTime       time.Time
-	up              prometheus.Gauge
-	targetRate      prometheus.Gauge
-	windowSeconds   prometheus.Gauge
-	targetBatchSize prometheus.Gauge
-	inserted        prometheus.Counter
-	batches         prometheus.Counter
-	batchErrors     prometheus.Counter
-	backpressure    prometheus.Counter
-	observedRate    prometheus.Gauge
-	batchSize       prometheus.Histogram
-	batchDuration   prometheus.Histogram
+	Registry        *prometheus.Registry
+	StartTime       time.Time
+	Up              prometheus.Gauge
+	TargetRate      prometheus.Gauge
+	WindowSeconds   prometheus.Gauge
+	TargetBatchSize prometheus.Gauge
+	Inserted        prometheus.Counter
+	Batches         prometheus.Counter
+	BatchErrors     prometheus.Counter
+	Backpressure    prometheus.Counter
+	ObservedRate    prometheus.Gauge
+	BatchSize       prometheus.Histogram
+	BatchDuration   prometheus.Histogram
 }
 
-func newProducerStats(targetRate float64, window time.Duration) *ProducerStats {
+func NewProducerStats(targetRate float64, window time.Duration) *ProducerStats {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewGoCollector(),
@@ -84,18 +84,18 @@ func newProducerStats(targetRate float64, window time.Duration) *ProducerStats {
 	windowSec.Set(window.Seconds())
 
 	return &ProducerStats{
-		registry:        registry,
-		startTime:       time.Now(),
-		up:              up,
-		targetRate:      trGauge,
-		windowSeconds:   windowSec,
-		targetBatchSize: targetBatch,
-		inserted:        inserted,
-		batches:         batches,
-		batchErrors:     batchErrors,
-		backpressure:    backpressure,
-		observedRate:    observedRate,
-		batchSize:       batchSizeHist,
-		batchDuration:   batchDurHist,
+		Registry:        registry,
+		StartTime:       time.Now(),
+		Up:              up,
+		TargetRate:      trGauge,
+		WindowSeconds:   windowSec,
+		TargetBatchSize: targetBatch,
+		Inserted:        inserted,
+		Batches:         batches,
+		BatchErrors:     batchErrors,
+		Backpressure:    backpressure,
+		ObservedRate:    observedRate,
+		BatchSize:       batchSizeHist,
+		BatchDuration:   batchDurHist,
 	}
 }
