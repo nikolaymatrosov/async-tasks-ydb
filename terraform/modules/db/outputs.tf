@@ -32,3 +32,8 @@ output "network_id" {
   description = "VPC network ID"
   value       = yandex_vpc_network.main.id
 }
+
+output "bastion_service_account_id" {
+  description = "ID of the bastion VM service account"
+  value       = yandex_iam_service_account.bastion.id
+}

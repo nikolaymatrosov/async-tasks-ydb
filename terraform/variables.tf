@@ -48,10 +48,16 @@ variable "vm_memory" {
   default     = 4
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for VM access (optional, for debugging)"
+variable "ssh_public_key_path" {
+  description = "Local path to the SSH public key for VM access (optional, for debugging)"
   type        = string
-  default     = ""
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "ssh_private_key_path" {
+  description = "Local path to the SSH private key used by the Terraform SSH provisioner on the bastion"
+  type        = string
+  default     = "~/.ssh/id_rsa"
 }
 
 variable "ydb_name" {

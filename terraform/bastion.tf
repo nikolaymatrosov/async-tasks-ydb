@@ -1,12 +1,13 @@
-data "yandex_compute_image" "ubuntu" {
-  family = "ubuntu-2404-lts"
+data "yandex_compute_image" "coi_bastion" {
+  family = "container-optimized-image"
 }
 
 resource "yandex_compute_instance" "bastion" {
-  name        = "async-tasks-bastion"
-  folder_id   = var.folder_id
-  zone        = var.zone
-  platform_id = "standard-v3"
+  name               = "async-tasks-bastion"
+  folder_id          = var.folder_id
+  zone               = var.zone
+  platform_id        = "standard-v3"
+  service_account_id = module.db.bastion_service_account_id
 
   resources {
     cores  = 2
@@ -15,7 +16,7 @@ resource "yandex_compute_instance" "bastion" {
 
   boot_disk {
     initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
+      image_id = data.yandex_compute_image.coi_bastion.id
       size     = 10
     }
   }
@@ -27,6 +28,21 @@ resource "yandex_compute_instance" "bastion" {
   }
 
   metadata = {
-    ssh-keys = "ubuntu:${var.ssh_public_key}"
+    ssh-keys = "yc-user:${file(var.ssh_public_key_path)}"
   }
+
+  connection {
+    type        = "ssh"
+    user        = "yc-user"
+    host        = self.network_interface[0].nat_ip_address
+    private_key = file(var.ssh_private_key_path)
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "docker run --rm -e YDB_ENDPOINT='${module.db.ydb_endpoint}' ${module.workers.migrations_image}",
+    ]
+  }
+
+  depends_on = [module.workers]
 }

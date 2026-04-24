@@ -48,7 +48,7 @@ module "workers" {
   platform_id               = var.platform_id
   vm_cores                  = var.vm_cores
   vm_memory                 = var.vm_memory
-  ssh_public_key            = var.ssh_public_key
+  ssh_public_key            = file(var.ssh_public_key_path)
   ig_max_size               = var.ig_max_size
   ig_min_zone_size          = var.ig_min_zone_size
   ig_cpu_target             = var.ig_cpu_target
@@ -70,7 +70,7 @@ module "producer" {
   platform_id    = var.platform_id
   vm_cores       = var.vm_cores
   vm_memory      = var.vm_memory
-  ssh_public_key = var.ssh_public_key
+  ssh_public_key = file(var.ssh_public_key_path)
   producer_size  = var.producer_size
   producer_rate  = var.producer_rate
 
