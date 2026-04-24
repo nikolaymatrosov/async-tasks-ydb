@@ -27,6 +27,7 @@ func main() {
 	batchWindowFlag := flag.Duration("batch-window", 100*time.Millisecond, "batch accumulation window")
 	reportIntervalFlag := flag.Duration("report-interval", 5*time.Second, "throughput reporting interval")
 	metricsPortFlag := flag.Int("metrics-port", 9090, "port for Prometheus /metrics endpoint")
+	apigwURLFlag := flag.String("apigw-url", os.Getenv("APIGW_URL"), "API Gateway base URL for task payloads")
 	flag.Parse()
 
 	_ = coordinationPathFlag
@@ -37,6 +38,10 @@ func main() {
 	}
 	if *databaseFlag == "" {
 		slog.Error("--database is required")
+		os.Exit(1)
+	}
+	if *apigwURLFlag == "" {
+		slog.Error("--apigw-url or APIGW_URL is required")
 		os.Exit(1)
 	}
 
@@ -58,5 +63,5 @@ func main() {
 	go http.ListenAndServe(addr, metrics.Handler(ps.Registry)) //nolint:errcheck
 	slog.Info("metrics server started", "addr", addr)
 
-	taskproducer.Produce(ctx, db, *rateFlag, *partitionsFlag, *batchWindowFlag, *reportIntervalFlag, ps)
+	taskproducer.Produce(ctx, db, *rateFlag, *partitionsFlag, *batchWindowFlag, *reportIntervalFlag, ps, *apigwURLFlag)
 }

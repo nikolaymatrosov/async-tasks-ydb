@@ -13,13 +13,14 @@ import (
 
 // Stats holds Prometheus metrics shared between the worker and the display loop.
 type Stats struct {
-	workerID  string
-	startTime time.Time
-	Registry  *prometheus.Registry
-	Processed prometheus.Counter
-	Locked    prometheus.Counter
-	Errors    prometheus.Counter
+	workerID   string
+	startTime  time.Time
+	Registry   *prometheus.Registry
+	Processed  prometheus.Counter
+	Locked     prometheus.Counter
+	Errors     prometheus.Counter
 	Partitions prometheus.Gauge
+	APIGWCalls *prometheus.CounterVec
 	up         prometheus.Gauge
 }
 
@@ -57,7 +58,13 @@ func NewStats(workerID string) *Stats {
 		ConstLabels: prometheus.Labels{"worker_id": workerID},
 	})
 
-	registry.MustRegister(processed, locked, errors, partitions, up)
+	apigwCalls := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "coordinator_apigw_calls_total",
+		Help:        "HTTP calls made to the API Gateway, by response status",
+		ConstLabels: prometheus.Labels{"worker_id": workerID},
+	}, []string{"http_status"})
+
+	registry.MustRegister(processed, locked, errors, partitions, up, apigwCalls)
 	up.Set(1)
 
 	return &Stats{
@@ -68,6 +75,7 @@ func NewStats(workerID string) *Stats {
 		Locked:     locked,
 		Errors:     errors,
 		Partitions: partitions,
+		APIGWCalls: apigwCalls,
 		up:         up,
 	}
 }

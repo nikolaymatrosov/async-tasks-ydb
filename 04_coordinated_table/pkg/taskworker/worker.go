@@ -20,6 +20,7 @@ type lockedTask struct {
 	partitionID uint16
 	priority    uint8
 	lockValue   string
+	payload     string
 }
 
 // Worker processes tasks from owned partitions.
@@ -30,6 +31,7 @@ type Worker struct {
 	BackoffMin   time.Duration
 	BackoffMax   time.Duration
 	Stats        *metrics.Stats
+	ProcessTask  func(ctx context.Context, taskID string, payload string) error
 }
 
 // Run listens for partition events and manages per-partition goroutines.
@@ -175,7 +177,7 @@ func (w *Worker) lockNextTask(ctx context.Context, partitionID int) (*lockedTask
 
 		rs, err := tx.Query(ctx,
 			`DECLARE $partition_id AS Uint16;
-SELECT id, priority
+SELECT id, priority, payload
 FROM coordinated_tasks
 WHERE partition_id = $partition_id
   AND (
@@ -208,9 +210,11 @@ LIMIT 1;`,
 
 		var taskID string
 		var priority uint8
+		var payload string
 		if err := row.ScanNamed(
 			query.Named("id", &taskID),
 			query.Named("priority", &priority),
+			query.Named("payload", &payload),
 		); err != nil {
 			return fmt.Errorf("scan task row: %w", err)
 		}
@@ -243,6 +247,7 @@ WHERE partition_id = $partition_id
 			partitionID: uint16(partitionID),
 			priority:    priority,
 			lockValue:   lockValue,
+			payload:     payload,
 		}
 		return nil
 	}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
@@ -254,7 +259,13 @@ WHERE partition_id = $partition_id
 }
 
 func (w *Worker) completeTask(ctx context.Context, task *lockedTask) {
-	time.Sleep(100 * time.Millisecond)
+	if w.ProcessTask != nil {
+		if err := w.ProcessTask(ctx, task.id, task.payload); err != nil {
+			w.Stats.Errors.Add(1)
+			slog.Warn("task processor failed", "worker_id", w.WorkerID, "task_id", task.id, "err", err)
+			return
+		}
+	}
 
 	doneAt := time.Now().UTC()
 	err := w.DB.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {

@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -94,11 +97,47 @@ func main() {
 		BackoffMin:   *backoffMinFlag,
 		BackoffMax:   *backoffMaxFlag,
 		Stats:        stats,
+		ProcessTask:  newAPIGWProcessor(stats),
 	}
 	worker.Run(ctx, partitionCh)
 
 	rb.Stop()
 	slog.Info("worker shutdown complete", "worker_id", workerID)
+}
+
+func newAPIGWProcessor(stats *metrics.Stats) func(ctx context.Context, taskID, payload string) error {
+	return func(ctx context.Context, taskID, payload string) error {
+		var p struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal([]byte(payload), &p); err != nil || p.URL == "" {
+			slog.Info("apigw call", "task_id", taskID, "outcome", "error", "err", "invalid payload")
+			stats.APIGWCalls.WithLabelValues("error").Inc()
+			return fmt.Errorf("invalid payload: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.URL, strings.NewReader(payload))
+		if err != nil {
+			stats.APIGWCalls.WithLabelValues("error").Inc()
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Task-ID", taskID)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			slog.Info("apigw call", "task_id", taskID, "url", p.URL, "http_status", "error", "err", err, "outcome", "error")
+			stats.APIGWCalls.WithLabelValues("error").Inc()
+			return err
+		}
+		defer resp.Body.Close()
+		status := strconv.Itoa(resp.StatusCode)
+		stats.APIGWCalls.WithLabelValues(status).Inc()
+		if resp.StatusCode != http.StatusOK {
+			slog.Info("apigw call", "task_id", taskID, "url", p.URL, "http_status", resp.StatusCode, "outcome", "error")
+			return fmt.Errorf("apigw returned %d", resp.StatusCode)
+		}
+		slog.Info("apigw call", "task_id", taskID, "url", p.URL, "http_status", resp.StatusCode)
+		return nil
+	}
 }
 
 func newUUID() string {

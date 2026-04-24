@@ -2,6 +2,7 @@ package taskproducer
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"math/rand"
@@ -27,7 +28,7 @@ type taskRow struct {
 	scheduledAt *time.Time
 }
 
-func buildBatch(ctx context.Context, batchSize int, partitions int) []taskRow {
+func buildBatch(ctx context.Context, batchSize int, partitions int, apigwURL string) []taskRow {
 	rows := make([]taskRow, 0, batchSize)
 	for range batchSize {
 		select {
@@ -44,7 +45,7 @@ func buildBatch(ctx context.Context, batchSize int, partitions int) []taskRow {
 		hash := int64(murmur3.Sum32([]byte(taskID)))
 		partitionID := uint16(uint64(hash&0x7FFFFFFFFFFFFFFF) % uint64(partitions))
 		priority := uint8(rand.Intn(256))
-		payload := "task-payload-" + taskID
+		payload := fmt.Sprintf(`{"url":%q}`, apigwURL)
 		now := time.Now().UTC()
 
 		var scheduledAt *time.Time
@@ -93,7 +94,7 @@ func upsertBatch(ctx context.Context, db *ydb.Driver, batch []taskRow) error {
 }
 
 // Produce runs the fixed-window batch loop until ctx is cancelled.
-func Produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batchWindow time.Duration, reportInterval time.Duration, ps *metrics.ProducerStats) {
+func Produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batchWindow time.Duration, reportInterval time.Duration, ps *metrics.ProducerStats, apigwURL string) {
 	if rate <= 0 {
 		rate = 1
 	}
@@ -141,7 +142,7 @@ func Produce(ctx context.Context, db *ydb.Driver, rate int, partitions int, batc
 loop:
 	for ctx.Err() == nil {
 		windowStart := time.Now()
-		batch := buildBatch(ctx, targetBatchSize, partitions)
+		batch := buildBatch(ctx, targetBatchSize, partitions, apigwURL)
 
 		if err := upsertBatch(ctx, db, batch); err != nil {
 			if ctx.Err() != nil {
