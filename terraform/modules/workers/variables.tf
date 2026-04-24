@@ -85,7 +85,7 @@ variable "ig_stabilization_duration" {
 variable "ig_warmup_duration" {
   description = "Seconds a new instance is excluded from autoscale averaging"
   type        = number
-  default     = 120
+  default     = 30
 }
 
 variable "ig_measurement_duration" {

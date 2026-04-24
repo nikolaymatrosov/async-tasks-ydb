@@ -31,10 +31,18 @@ resource "yandex_compute_instance" "bastion" {
     ssh-keys = "yc-user:${file(var.ssh_public_key_path)}"
   }
 
+  depends_on = [module.workers]
+}
+
+resource "null_resource" "run_migrations" {
+  triggers = {
+    migrations_image = module.workers.migrations_image
+  }
+
   connection {
     type        = "ssh"
     user        = "yc-user"
-    host        = self.network_interface[0].nat_ip_address
+    host        = yandex_compute_instance.bastion.network_interface[0].nat_ip_address
     private_key = file(var.ssh_private_key_path)
   }
 
@@ -44,5 +52,5 @@ resource "yandex_compute_instance" "bastion" {
     ]
   }
 
-  depends_on = [module.workers]
+  depends_on = [yandex_compute_instance.bastion]
 }

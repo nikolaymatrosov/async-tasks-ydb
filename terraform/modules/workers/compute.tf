@@ -65,9 +65,9 @@ allocation_policy {
 }
 
 deploy_policy {
-  max_unavailable = 1
-  max_creating    = 1
-  max_expansion   = 1
-  max_deleting    = 1
+  max_unavailable = 2
+  max_creating    = 2
+  max_expansion   = 2
+  max_deleting    = 2
 }
 }
