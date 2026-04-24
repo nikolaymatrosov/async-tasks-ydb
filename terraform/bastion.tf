@@ -48,6 +48,7 @@ resource "null_resource" "run_migrations" {
 
   provisioner "remote-exec" {
     inline = [
+      "docker login --username iam --password $(yc iam create-token) cr.yandex",
       "docker run --rm -e YDB_ENDPOINT='${module.db.ydb_endpoint}' ${module.workers.migrations_image}",
     ]
   }
