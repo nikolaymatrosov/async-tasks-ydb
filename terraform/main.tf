@@ -79,6 +79,7 @@ module "producer" {
   ydb_endpoint       = module.db.ydb_endpoint
   ydb_database       = module.db.ydb_database_path
   subnet_ids         = module.db.subnet_ids
+  apigw_url          = module.apigw.gateway_domain
 }
 
 module "apigw" {

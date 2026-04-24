@@ -69,3 +69,8 @@ variable "producer_rate" {
   type        = number
   default     = 100
 }
+
+variable "apigw_url" {
+  description = "API Gateway base URL passed to the producer as APIGW_URL"
+  type        = string
+}

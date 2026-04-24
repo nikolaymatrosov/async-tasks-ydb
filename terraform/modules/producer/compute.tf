@@ -33,6 +33,7 @@ resource "yandex_compute_instance_group" "producer" {
           ydb_endpoint      = var.ydb_endpoint
           ydb_database      = var.ydb_database
           producer_rate     = var.producer_rate
+          apigw_url         = var.apigw_url
         })
       },
       var.ssh_public_key != "" ? { "ssh-keys" = "yc-user:${var.ssh_public_key}" } : {}
