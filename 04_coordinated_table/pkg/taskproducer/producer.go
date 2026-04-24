@@ -83,7 +83,7 @@ func upsertBatch(ctx context.Context, db *ydb.Driver, batch []taskRow) error {
 
 	return db.Query().Exec(ctx,
 		`UPSERT INTO coordinated_tasks
-		SELECT id, hash, partition_id, priority, "pending" AS status, payload, created_at, scheduled_at
+		SELECT id, hash, partition_id, priority, "pending"u AS status, payload, created_at, scheduled_at
 		FROM AS_TABLE($records)`,
 		query.WithParameters(
 			ydb.ParamsBuilder().
