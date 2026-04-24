@@ -20,7 +20,7 @@ type ProducerStats struct {
 	BatchErrors     prometheus.Counter
 	Backpressure    prometheus.Counter
 	ObservedRate    prometheus.Gauge
-	BatchSize       prometheus.Histogram
+	BatchSize       prometheus.Gauge
 	BatchDuration   prometheus.Histogram
 }
 
@@ -67,15 +67,14 @@ func NewProducerStats(targetRate float64, window time.Duration) *ProducerStats {
 		Name: "producer_observed_rate",
 		Help: "Rows/sec computed over the last report interval",
 	})
-	batchSizeHist := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "producer_batch_size",
-		Help:    "Distribution of rows per submitted batch",
-		Buckets: []float64{1, 10, 100, 1000, 10000},
+	batchSizeHist := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "producer_batch_size",
+		Help: "Rows in the last submitted batch",
 	})
 	batchDurHist := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "producer_batch_duration_seconds",
-		Help:    "Distribution of UPSERT latency",
-		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
+		Name:    "producer_batch_duration_milliseconds",
+		Help:    "Distribution of UPSERT latency in milliseconds",
+		Buckets: []float64{8, 16, 32, 64, 128},
 	})
 
 	registry.MustRegister(up, trGauge, windowSec, targetBatch, inserted, batches, batchErrors, backpressure, observedRate, batchSizeHist, batchDurHist)

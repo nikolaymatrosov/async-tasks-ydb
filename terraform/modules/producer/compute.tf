@@ -34,7 +34,19 @@ resource "yandex_compute_instance_group" "producer" {
           ydb_database      = var.ydb_database
           producer_rate     = var.producer_rate
           apigw_url         = var.apigw_url
+          folder_id         = var.folder_id
         })
+        "user-data" = <<-EOT
+          #cloud-config
+          write_files:
+            - path: /home/yc-user/ua-config.yml
+              permissions: '0644'
+              content: |
+                ${indent(6, templatefile("${path.module}/ua-config.yml.tpl", {
+  metrics_url = "http://localhost:9090/metrics"
+  folder_id   = var.folder_id
+}))}
+          EOT
       },
       var.ssh_public_key != "" ? { "ssh-keys" = "yc-user:${var.ssh_public_key}" } : {}
     )

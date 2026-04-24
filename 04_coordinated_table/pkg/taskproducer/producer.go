@@ -157,10 +157,10 @@ loop:
 		insertedTotal.Add(n)
 		ps.Inserted.Add(float64(n))
 		ps.Batches.Inc()
-		ps.BatchSize.Observe(float64(n))
+		ps.BatchSize.Set(float64(n))
 
 		elapsed := time.Since(windowStart)
-		ps.BatchDuration.Observe(elapsed.Seconds())
+		ps.BatchDuration.Observe(float64(elapsed.Milliseconds()))
 
 		if elapsed >= effectiveWindow {
 			ps.Backpressure.Inc()

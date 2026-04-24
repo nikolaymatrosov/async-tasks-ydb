@@ -143,7 +143,7 @@ variable "producer_size" {
 variable "producer_rate" {
   description = "Task injection rate (tasks/second) for the coordinated tasks producer"
   type        = number
-  default     = 100
+  default     = 500
 }
 
 variable "apigw_name" {
