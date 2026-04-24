@@ -8,7 +8,7 @@ resource "yandex_compute_instance_group" "workers" {
   service_account_id = var.service_account_id
 
   instance_template {
-    platform_id = var.platform_id
+    platform_id        = var.platform_id
     service_account_id = var.service_account_id
 
     resources {
@@ -41,8 +41,8 @@ resource "yandex_compute_instance_group" "workers" {
             permissions: '0644'
             content: |
               ${indent(6, templatefile("${path.module}/ua-config.yml.tpl", {
-              metrics_url = "http://localhost:9090/metrics"
-              folder_id   = var.folder_id
+      metrics_url = "http://localhost:9090/metrics"
+      folder_id   = var.folder_id
 }))}
         EOT
 }

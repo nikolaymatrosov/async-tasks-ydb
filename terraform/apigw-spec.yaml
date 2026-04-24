@@ -1,0 +1,15 @@
+openapi: 3.0.0
+info:
+  title: async-tasks API
+  version: "1.0"
+paths:
+  /:
+    post:
+      x-yc-apigateway-integration:
+        type: dummy
+        content:
+          '*': |
+            {"status":"ok"}
+        http_code: 200
+        http_headers:
+          Content-Type: application/json

@@ -57,3 +57,13 @@ output "bastion_ip" {
   description = "Public IP of the bastion jump host"
   value       = yandex_compute_instance.bastion.network_interface[0].nat_ip_address
 }
+
+output "gateway_id" {
+  description = "API Gateway resource ID"
+  value       = module.apigw.gateway_id
+}
+
+output "gateway_domain" {
+  description = "Default domain assigned to the API Gateway"
+  value       = module.apigw.gateway_domain
+}
