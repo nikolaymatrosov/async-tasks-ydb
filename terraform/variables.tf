@@ -139,3 +139,21 @@ variable "producer_rate" {
   type        = number
   default     = 100
 }
+
+variable "apigw_name" {
+  description = "Name of the API Gateway"
+  type        = string
+  default     = "async-tasks-apigw"
+}
+
+variable "apigw_description" {
+  description = "Description of the API Gateway"
+  type        = string
+  default     = ""
+}
+
+variable "apigw_spec_file" {
+  description = "Path to the OpenAPI 3.0 spec YAML file, relative to the terraform/ directory"
+  type        = string
+  default     = "apigw-spec.yaml"
+}

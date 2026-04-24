@@ -8,7 +8,7 @@ resource "yandex_compute_instance_group" "producer" {
   service_account_id = var.service_account_id
 
   instance_template {
-    platform_id = var.platform_id
+    platform_id        = var.platform_id
     service_account_id = var.service_account_id
 
     resources {
