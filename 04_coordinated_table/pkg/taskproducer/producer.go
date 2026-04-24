@@ -45,7 +45,7 @@ func buildBatch(ctx context.Context, batchSize int, partitions int, apigwURL str
 		hash := int64(murmur3.Sum32([]byte(taskID)))
 		partitionID := uint16(uint64(hash&0x7FFFFFFFFFFFFFFF) % uint64(partitions))
 		priority := uint8(rand.Intn(256))
-		payload := fmt.Sprintf(`{"url":%q}`, apigwURL)
+		payload := fmt.Sprintf(`{"url":"https://%s/"}`, apigwURL)
 		now := time.Now().UTC()
 
 		var scheduledAt *time.Time
