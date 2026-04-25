@@ -3,6 +3,7 @@
 Auto-generated from all feature plans. Last updated: 2026-04-25
 
 ## Active Technologies
+
 - Go 1.26 (go.mod); HCL (Terraform ≥ 1.5) + `ydb-go-sdk/v3 v3.127.0`, `ydb-go-yc v0.12.3`, stdlib `net/http` (no new direct deps); Terraform provider `yandex-cloud/yandex` (005-04-autoscale-deploy)
 - YDB (existing `coordinated_tasks` table — no schema changes) (005-04-autoscale-deploy)
 - HCL (Terraform ≥ 1.5) + `yandex-cloud/yandex` provider, `hashicorp/null ≥ 3.0`, `hashicorp/external ≥ 2.0`, `think-it-labs/dirhash 0.0.1` — all already in `.terraform.lock.hcl`; no new provider additions (007-tf-modular-deploy)
@@ -37,10 +38,10 @@ tests/
 Go 1.26 (as declared in go.mod): Follow standard conventions
 
 ## Recent Changes
+
 - 014-worker-repository-refactor: Added Go 1.26 (as declared in `go.mod`) + `github.com/ydb-platform/ydb-go-sdk/v3 v3.127.0` (`query`, `query.Session`, `query.TxActor`, `ParamsBuilder`, `TxSettings`); stdlib `context`, `time`, `log/slog`. **No new direct `go.mod` dependencies.**
 - 008-batch-producer-rate: Added Go 1.26 (as declared in `go.mod`) + `ydb-go-sdk/v3 v3.127.0` (`query`, `types`, `ParamsBuilder`), `murmur3 v1.1.8`, `uuid v1.6.0` — all already in `go.mod`; no new direct dependencies
 - 007-tf-modular-deploy: Added HCL (Terraform ≥ 1.5) + `yandex-cloud/yandex` provider, `hashicorp/null ≥ 3.0`, `hashicorp/external ≥ 2.0`, `think-it-labs/dirhash 0.0.1` — all already in `.terraform.lock.hcl`; no new provider additions
-
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
@@ -48,5 +49,5 @@ Go 1.26 (as declared in go.mod): Follow standard conventions
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at `specs/014-worker-repository-refactor/plan.md`.
+at `specs/015-tf-ig-sa-refactor/plan.md`.
 <!-- SPECKIT END -->
