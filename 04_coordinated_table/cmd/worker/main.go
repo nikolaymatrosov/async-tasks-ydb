@@ -90,8 +90,9 @@ func main() {
 		return
 	}
 
+	repo := taskworker.NewYDBRepository(db)
 	worker := &taskworker.Worker{
-		DB:           db,
+		Repo:         repo,
 		WorkerID:     workerID,
 		LockDuration: *lockDurationFlag,
 		BackoffMin:   *backoffMinFlag,

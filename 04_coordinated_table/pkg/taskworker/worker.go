@@ -2,36 +2,28 @@ package taskworker
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"log/slog"
 	"sync"
 	"time"
-
-	ydb "github.com/ydb-platform/ydb-go-sdk/v3"
-	"github.com/ydb-platform/ydb-go-sdk/v3/query"
 
 	"async-tasks-ydb/04_coordinated_table/pkg/metrics"
 	"async-tasks-ydb/04_coordinated_table/pkg/rebalancer"
 	"async-tasks-ydb/04_coordinated_table/pkg/uid"
 )
 
-type lockedTask struct {
-	id          string
-	partitionID uint16
-	priority    uint8
-	lockValue   string
-	payload     string
-}
-
 // Worker processes tasks from owned partitions.
 type Worker struct {
-	DB           *ydb.Driver
+	Repo         TaskRepository
 	WorkerID     string
 	LockDuration time.Duration
 	BackoffMin   time.Duration
 	BackoffMax   time.Duration
 	Stats        *metrics.Stats
 	ProcessTask  func(ctx context.Context, taskID string, payload string) error
+	// SleepFn replaces the real timer sleep when set; used in tests to record
+	// backoff durations and return immediately.
+	SleepFn func(d time.Duration)
 }
 
 // Run listens for partition events and manages per-partition goroutines.
@@ -130,21 +122,47 @@ func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context,
 		default:
 		}
 
-		task, err := w.lockNextTask(ctx, partitionID)
+		candidate, err := w.Repo.FetchEligibleCandidate(ctx, uint16(partitionID))
 		if err != nil {
-			if ctx.Err() != nil || leaseCtx.Err() != nil {
+			if errors.Is(err, context.Canceled) {
 				return
 			}
 			w.Stats.Errors.Add(1)
 			slog.Warn("lock task failed", "worker_id", w.WorkerID, "partition_id", partitionID, "err", err)
-			w.sleep(ctx, leaseCtx, backoff)
+			w.doSleep(ctx, leaseCtx, backoff)
 			backoff = minDuration(backoff*2, w.BackoffMax)
 			continue
 		}
 
-		if task == nil {
-			w.sleep(ctx, leaseCtx, backoff)
+		if candidate == nil {
+			w.doSleep(ctx, leaseCtx, backoff)
 			backoff = minDuration(backoff*2, w.BackoffMax)
+			continue
+		}
+
+		lockValue, err := uid.GenerateUUID()
+		if err != nil {
+			w.Stats.Errors.Add(1)
+			slog.Warn("lock task failed", "worker_id", w.WorkerID, "partition_id", partitionID, "err", err)
+			w.doSleep(ctx, leaseCtx, backoff)
+			backoff = minDuration(backoff*2, w.BackoffMax)
+			continue
+		}
+		lockedUntil := time.Now().UTC().Add(w.LockDuration)
+
+		claimed, err := w.Repo.ClaimTask(ctx, uint16(partitionID), *candidate, lockValue, lockedUntil)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			w.Stats.Errors.Add(1)
+			slog.Warn("lock task failed", "worker_id", w.WorkerID, "partition_id", partitionID, "err", err)
+			w.doSleep(ctx, leaseCtx, backoff)
+			backoff = minDuration(backoff*2, w.BackoffMax)
+			continue
+		}
+
+		if claimed == nil {
 			continue
 		}
 
@@ -152,233 +170,44 @@ func (w *Worker) processPartition(ctx context.Context, leaseCtx context.Context,
 		w.Stats.Locked.Add(1)
 		slog.Info("task locked",
 			"worker_id", w.WorkerID,
-			"partition_id", task.partitionID,
-			"task_id", task.id,
-			"priority", task.priority,
+			"partition_id", claimed.PartitionID,
+			"task_id", claimed.ID,
+			"priority", claimed.Priority,
 		)
 
-		go w.completeTask(ctx, task)
-	}
-}
-
-// lockNextTask selects and locks the highest-priority eligible task in a partition.
-// Returns nil, nil if no eligible task exists or the candidate was claimed by
-// another owner (lease handover) between the snapshot read and the conditional
-// update.
-//
-// Two-phase to avoid range read-locks that producer UPSERTs would invalidate:
-//   1. Snapshot RO SELECT picks the candidate without taking optimistic locks.
-//   2. SerializableRW point-read + conditional UPDATE locks one specific row by
-//      full PK; status is re-checked inside the tx so a lost race is a no-op.
-func (w *Worker) lockNextTask(ctx context.Context, partitionID int) (*lockedTask, error) {
-	var (
-		taskID   string
-		priority uint8
-		payload  string
-		found    bool
-	)
-
-	err := w.DB.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
-		found = false
-		rs, err := s.Query(ctx,
-			`DECLARE $partition_id AS Uint16;
-SELECT id, priority, payload
-FROM coordinated_tasks
-WHERE partition_id = $partition_id
-  AND (
-      status = 'pending'
-      OR (status = 'locked' AND locked_until < CurrentUtcTimestamp())
-  )
-  AND (scheduled_at IS NULL OR scheduled_at <= CurrentUtcTimestamp())
-ORDER BY priority DESC
-LIMIT 1;`,
-			query.WithParameters(
-				ydb.ParamsBuilder().
-					Param("$partition_id").Uint16(uint16(partitionID)).
-					Build(),
-			),
-			query.WithTxControl(query.SnapshotReadOnlyTxControl()),
-		)
-		if err != nil {
-			return fmt.Errorf("snapshot select task: %w", err)
-		}
-		defer rs.Close(ctx) //nolint:errcheck
-
-		resultSet, err := rs.NextResultSet(ctx)
-		if err != nil {
-			return fmt.Errorf("next result set: %w", err)
-		}
-		row, err := resultSet.NextRow(ctx)
-		if err != nil {
-			return nil
-		}
-		if err := row.ScanNamed(
-			query.Named("id", &taskID),
-			query.Named("priority", &priority),
-			query.Named("payload", &payload),
-		); err != nil {
-			return fmt.Errorf("scan task row: %w", err)
-		}
-		found = true
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if !found {
-		return nil, nil
-	}
-
-	lockValue, err := uid.GenerateUUID()
-	if err != nil {
-		return nil, err
-	}
-	lockedUntil := time.Now().UTC().Add(w.LockDuration)
-
-	var claimed bool
-	err = w.DB.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
-		claimed = false
-
-		rs, err := tx.Query(ctx,
-			`DECLARE $partition_id AS Uint16;
-DECLARE $priority AS Uint8;
-DECLARE $id AS Utf8;
-SELECT status, locked_until
-FROM coordinated_tasks
-WHERE partition_id = $partition_id
-  AND priority = $priority
-  AND id = $id;`,
-			query.WithParameters(
-				ydb.ParamsBuilder().
-					Param("$partition_id").Uint16(uint16(partitionID)).
-					Param("$priority").Uint8(priority).
-					Param("$id").Text(taskID).
-					Build(),
-			),
-		)
-		if err != nil {
-			return fmt.Errorf("point select task: %w", err)
-		}
-		defer rs.Close(ctx) //nolint:errcheck
-
-		resultSet, err := rs.NextResultSet(ctx)
-		if err != nil {
-			return fmt.Errorf("next result set: %w", err)
-		}
-		row, err := resultSet.NextRow(ctx)
-		if err != nil {
-			return nil
+		if w.ProcessTask != nil {
+			if err := w.ProcessTask(ctx, claimed.ID, claimed.Payload); err != nil {
+				w.Stats.Errors.Add(1)
+				slog.Warn("task processor failed", "worker_id", w.WorkerID, "task_id", claimed.ID, "err", err)
+				continue
+			}
 		}
 
-		var status string
-		var currentLockedUntil *time.Time
-		if err := row.ScanNamed(
-			query.Named("status", &status),
-			query.Named("locked_until", &currentLockedUntil),
-		); err != nil {
-			return fmt.Errorf("scan status row: %w", err)
-		}
-
-		claimable := status == "pending" ||
-			(status == "locked" && currentLockedUntil != nil && currentLockedUntil.Before(time.Now().UTC()))
-		if !claimable {
-			return nil
-		}
-
-		if err := tx.Exec(ctx,
-			`DECLARE $id AS Utf8;
-DECLARE $partition_id AS Uint16;
-DECLARE $priority AS Uint8;
-DECLARE $lock_value AS Utf8;
-DECLARE $locked_until AS Timestamp;
-UPDATE coordinated_tasks
-SET status = 'locked',
-    lock_value = $lock_value,
-    locked_until = $locked_until
-WHERE partition_id = $partition_id
-  AND priority = $priority
-  AND id = $id;`,
-			query.WithParameters(
-				ydb.ParamsBuilder().
-					Param("$id").Text(taskID).
-					Param("$partition_id").Uint16(uint16(partitionID)).
-					Param("$priority").Uint8(priority).
-					Param("$lock_value").Text(lockValue).
-					Param("$locked_until").Timestamp(lockedUntil).
-					Build(),
-			),
-		); err != nil {
-			return fmt.Errorf("update task lock: %w", err)
-		}
-
-		claimed = true
-		return nil
-	}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
-
-	if err != nil {
-		return nil, err
-	}
-	if !claimed {
-		return nil, nil
-	}
-	return &lockedTask{
-		id:          taskID,
-		partitionID: uint16(partitionID),
-		priority:    priority,
-		lockValue:   lockValue,
-		payload:     payload,
-	}, nil
-}
-
-func (w *Worker) completeTask(ctx context.Context, task *lockedTask) {
-	if w.ProcessTask != nil {
-		if err := w.ProcessTask(ctx, task.id, task.payload); err != nil {
+		doneAt := time.Now().UTC()
+		if err := w.Repo.MarkCompleted(ctx, *claimed, doneAt); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			w.Stats.Errors.Add(1)
-			slog.Warn("task processor failed", "worker_id", w.WorkerID, "task_id", task.id, "err", err)
-			return
+			slog.Warn("task complete failed", "worker_id", w.WorkerID, "task_id", claimed.ID, "err", err)
+			continue
 		}
-	}
 
-	doneAt := time.Now().UTC()
-	err := w.DB.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
-		return tx.Exec(ctx,
-			`DECLARE $id AS Utf8;
-DECLARE $partition_id AS Uint16;
-DECLARE $priority AS Uint8;
-DECLARE $done_at AS Timestamp;
-UPDATE coordinated_tasks
-SET status = 'completed',
-    done_at = $done_at
-WHERE partition_id = $partition_id
-  AND priority = $priority
-  AND id = $id;`,
-			query.WithParameters(
-				ydb.ParamsBuilder().
-					Param("$id").Text(task.id).
-					Param("$partition_id").Uint16(task.partitionID).
-					Param("$priority").Uint8(task.priority).
-					Param("$done_at").Timestamp(doneAt).
-					Build(),
-			),
-		)
-	}, query.WithTxSettings(query.TxSettings(query.WithSerializableReadWrite())))
-
-	if err != nil {
-		w.Stats.Errors.Add(1)
-		slog.Warn("task complete failed",
+		w.Stats.Processed.Add(1)
+		slog.Info("task completed",
 			"worker_id", w.WorkerID,
-			"task_id", task.id,
-			"err", err,
+			"partition_id", claimed.PartitionID,
+			"task_id", claimed.ID,
 		)
+	}
+}
+
+func (w *Worker) doSleep(ctx context.Context, leaseCtx context.Context, d time.Duration) {
+	if w.SleepFn != nil {
+		w.SleepFn(d)
 		return
 	}
-
-	w.Stats.Processed.Add(1)
-	slog.Info("task completed",
-		"worker_id", w.WorkerID,
-		"partition_id", task.partitionID,
-		"task_id", task.id,
-	)
+	w.sleep(ctx, leaseCtx, d)
 }
 
 func (w *Worker) sleep(ctx context.Context, leaseCtx context.Context, d time.Duration) {
