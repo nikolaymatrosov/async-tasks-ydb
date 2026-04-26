@@ -5,11 +5,11 @@ data "yandex_compute_image" "coi" {
 resource "yandex_compute_instance_group" "workers" {
   name               = "async-tasks-workers"
   folder_id          = var.folder_id
-  service_account_id = var.service_account_id
+  service_account_id = yandex_iam_service_account.workers_ig.id
 
   instance_template {
     platform_id        = var.platform_id
-    service_account_id = var.service_account_id
+    service_account_id = yandex_iam_service_account.workers_vm.id
 
     resources {
       cores  = var.vm_cores
@@ -70,4 +70,14 @@ deploy_policy {
   max_expansion   = 2
   max_deleting    = 2
 }
+
+depends_on = [
+  yandex_resourcemanager_folder_iam_member.workers_ig_compute_editor,
+  yandex_resourcemanager_folder_iam_member.workers_ig_sa_user,
+  yandex_resourcemanager_folder_iam_member.workers_ig_vpc_user,
+  yandex_resourcemanager_folder_iam_member.workers_ig_vpc_public_admin,
+  yandex_resourcemanager_folder_iam_member.workers_vm_registry_puller,
+  yandex_resourcemanager_folder_iam_member.workers_vm_ydb_editor,
+  yandex_resourcemanager_folder_iam_member.workers_vm_monitoring_editor,
+]
 }

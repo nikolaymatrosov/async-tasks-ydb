@@ -5,11 +5,11 @@ data "yandex_compute_image" "coi" {
 resource "yandex_compute_instance_group" "producer" {
   name               = "async-tasks-producer"
   folder_id          = var.folder_id
-  service_account_id = var.service_account_id
+  service_account_id = yandex_iam_service_account.producer_ig.id
 
   instance_template {
     platform_id        = var.platform_id
-    service_account_id = var.service_account_id
+    service_account_id = yandex_iam_service_account.producer_vm.id
 
     resources {
       cores  = var.vm_cores
@@ -43,31 +43,40 @@ resource "yandex_compute_instance_group" "producer" {
               permissions: '0644'
               content: |
                 ${indent(6, templatefile("${path.module}/ua-config.yml.tpl", {
-  metrics_url = "http://localhost:9090/metrics"
-  folder_id   = var.folder_id
+        metrics_url = "http://localhost:9090/metrics"
+        folder_id   = var.folder_id
 }))}
           EOT
-      },
-      var.ssh_public_key != "" ? { "ssh-keys" = "yc-user:${var.ssh_public_key}" } : {}
-    )
-  }
+},
+var.ssh_public_key != "" ? { "ssh-keys" = "yc-user:${var.ssh_public_key}" } : {}
+)
+}
 
-  scale_policy {
-    fixed_scale {
-      size = var.producer_size
-    }
+scale_policy {
+  fixed_scale {
+    size = var.producer_size
   }
+}
 
-  allocation_policy {
-    zones = [var.zone]
-  }
+allocation_policy {
+  zones = [var.zone]
+}
 
-  deploy_policy {
-    max_unavailable = 1
-    max_creating    = 1
-    max_expansion   = 1
-    max_deleting    = 1
-  }
+deploy_policy {
+  max_unavailable = 1
+  max_creating    = 1
+  max_expansion   = 1
+  max_deleting    = 1
+}
 
-  depends_on = [null_resource.coordinator_image]
+depends_on = [
+  null_resource.coordinator_image,
+  yandex_resourcemanager_folder_iam_member.producer_ig_compute_editor,
+  yandex_resourcemanager_folder_iam_member.producer_ig_sa_user,
+  yandex_resourcemanager_folder_iam_member.producer_ig_vpc_user,
+  yandex_resourcemanager_folder_iam_member.producer_ig_vpc_public_admin,
+  yandex_resourcemanager_folder_iam_member.producer_vm_registry_puller,
+  yandex_resourcemanager_folder_iam_member.producer_vm_ydb_editor,
+  yandex_resourcemanager_folder_iam_member.producer_vm_monitoring_editor,
+]
 }

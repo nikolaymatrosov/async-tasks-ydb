@@ -16,7 +16,7 @@
 
 **Purpose**: Confirm the current Terraform configuration is valid before making any changes.
 
-- [ ] T001 Run `terraform validate` in `terraform/` and confirm zero errors (baseline checkpoint)
+- [X] T001 Run `terraform validate` in `terraform/` and confirm zero errors (baseline checkpoint)
 - [ ] T002 Run `terraform plan` and note current resource count for comparison after refactor
 
 ---
@@ -27,9 +27,9 @@
 
 **⚠️ CRITICAL**: US1 and US2 implementation can proceed in parallel with this phase (editing different files), but `terraform validate` of the full configuration cannot pass until this phase is complete.
 
-- [ ] T003 In `terraform/modules/db/iam.tf`: remove `yandex_iam_service_account.coi_vm` resource and its 7 `yandex_resourcemanager_folder_iam_member` bindings (`registry_puller`, `ydb_editor`, `monitoring_editor`, `vpc_user`, `vpc_public_admin`, `compute_editor`, `iam_sa_user`); retain `yandex_iam_service_account.bastion` and its 2 bindings unchanged
-- [ ] T004 In `terraform/modules/db/outputs.tf`: remove the `service_account_id` output block entirely
-- [ ] T005 In `terraform/main.tf`: remove `service_account_id = module.db.service_account_id` from the `module "workers"` block and from the `module "producer"` block
+- [X] T003 In `terraform/modules/db/iam.tf`: remove `yandex_iam_service_account.coi_vm` resource and its 7 `yandex_resourcemanager_folder_iam_member` bindings (`registry_puller`, `ydb_editor`, `monitoring_editor`, `vpc_user`, `vpc_public_admin`, `compute_editor`, `iam_sa_user`); retain `yandex_iam_service_account.bastion` and its 2 bindings unchanged
+- [X] T004 In `terraform/modules/db/outputs.tf`: remove the `service_account_id` output block entirely
+- [X] T005 In `terraform/main.tf`: remove `service_account_id = module.db.service_account_id` from the `module "workers"` block and from the `module "producer"` block
 
 **Checkpoint**: Foundation ready — `db` module no longer owns the shared SA; US1 and US2 can now complete end-to-end
 
@@ -43,9 +43,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T006 [P] [US1] Create `terraform/modules/producer/iam.tf` with `yandex_iam_service_account.producer_ig` (name: `async-tasks-producer-ig-sa`) and `yandex_iam_service_account.producer_vm` (name: `async-tasks-producer-vm-sa`), plus 4 IAM bindings for `producer_ig` (`compute.editor`, `iam.serviceAccounts.user`, `vpc.user`, `vpc.publicAdmin`) and 3 IAM bindings for `producer_vm` (`container-registry.images.puller`, `ydb.editor`, `monitoring.editor`); all bindings use `var.folder_id` and `yandex_resourcemanager_folder_iam_member` resource type
-- [ ] T007 [US1] In `terraform/modules/producer/compute.tf`: replace both `service_account_id = var.service_account_id` references — IG-level with `yandex_iam_service_account.producer_ig.id` and instance-template-level with `yandex_iam_service_account.producer_vm.id`; add `depends_on` to `yandex_compute_instance_group.producer` listing all 7 IAM binding resources from T006 alongside the existing `null_resource.coordinator_image` entry (depends on T006)
-- [ ] T008 [P] [US1] In `terraform/modules/producer/variables.tf`: remove the `service_account_id` variable block entirely
+- [X] T006 [P] [US1] Create `terraform/modules/producer/iam.tf` with `yandex_iam_service_account.producer_ig` (name: `async-tasks-producer-ig-sa`) and `yandex_iam_service_account.producer_vm` (name: `async-tasks-producer-vm-sa`), plus 4 IAM bindings for `producer_ig` (`compute.editor`, `iam.serviceAccounts.user`, `vpc.user`, `vpc.publicAdmin`) and 3 IAM bindings for `producer_vm` (`container-registry.images.puller`, `ydb.editor`, `monitoring.editor`); all bindings use `var.folder_id` and `yandex_resourcemanager_folder_iam_member` resource type
+- [X] T007 [US1] In `terraform/modules/producer/compute.tf`: replace both `service_account_id = var.service_account_id` references — IG-level with `yandex_iam_service_account.producer_ig.id` and instance-template-level with `yandex_iam_service_account.producer_vm.id`; add `depends_on` to `yandex_compute_instance_group.producer` listing all 7 IAM binding resources from T006 alongside the existing `null_resource.coordinator_image` entry (depends on T006)
+- [X] T008 [P] [US1] In `terraform/modules/producer/variables.tf`: remove the `service_account_id` variable block entirely
 
 **Checkpoint**: Producer IG fully isolated — two dedicated SAs, correct SA references in IG resource, `depends_on` wiring in place
 
@@ -59,9 +59,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T009 [P] [US2] Create `terraform/modules/workers/iam.tf` with `yandex_iam_service_account.workers_ig` (name: `async-tasks-workers-ig-sa`) and `yandex_iam_service_account.workers_vm` (name: `async-tasks-workers-vm-sa`), plus 4 IAM bindings for `workers_ig` (`compute.editor`, `iam.serviceAccounts.user`, `vpc.user`, `vpc.publicAdmin`) and 3 IAM bindings for `workers_vm` (`container-registry.images.puller`, `ydb.editor`, `monitoring.editor`); all bindings use `var.folder_id` and `yandex_resourcemanager_folder_iam_member` resource type
-- [ ] T010 [US2] In `terraform/modules/workers/compute.tf`: replace both `service_account_id = var.service_account_id` references — IG-level with `yandex_iam_service_account.workers_ig.id` and instance-template-level with `yandex_iam_service_account.workers_vm.id`; add `depends_on` to `yandex_compute_instance_group.workers` listing all 7 IAM binding resources from T009 (depends on T009)
-- [ ] T011 [P] [US2] In `terraform/modules/workers/variables.tf`: remove the `service_account_id` variable block entirely
+- [X] T009 [P] [US2] Create `terraform/modules/workers/iam.tf` with `yandex_iam_service_account.workers_ig` (name: `async-tasks-workers-ig-sa`) and `yandex_iam_service_account.workers_vm` (name: `async-tasks-workers-vm-sa`), plus 4 IAM bindings for `workers_ig` (`compute.editor`, `iam.serviceAccounts.user`, `vpc.user`, `vpc.publicAdmin`) and 3 IAM bindings for `workers_vm` (`container-registry.images.puller`, `ydb.editor`, `monitoring.editor`); all bindings use `var.folder_id` and `yandex_resourcemanager_folder_iam_member` resource type
+- [X] T010 [US2] In `terraform/modules/workers/compute.tf`: replace both `service_account_id = var.service_account_id` references — IG-level with `yandex_iam_service_account.workers_ig.id` and instance-template-level with `yandex_iam_service_account.workers_vm.id`; add `depends_on` to `yandex_compute_instance_group.workers` listing all 7 IAM binding resources from T009 (depends on T009)
+- [X] T011 [P] [US2] In `terraform/modules/workers/variables.tf`: remove the `service_account_id` variable block entirely
 
 **Checkpoint**: Workers IG fully isolated — two dedicated SAs, correct SA references in IG resource, `depends_on` wiring in place
 
@@ -77,7 +77,7 @@
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Run `terraform validate` in `terraform/`; must exit 0 with no errors (depends on T003–T011 all complete)
+- [X] T012 [US3] Run `terraform validate` in `terraform/`; must exit 0 with no errors (depends on T003–T011 all complete)
 - [ ] T013 [US3] Run `terraform plan` and verify the plan shows: CREATE 4 new SAs, CREATE 14 new IAM bindings, DESTROY 1 old SA (`coi_vm`), DESTROY 7 old IAM bindings from db module, UPDATE 2 `yandex_compute_instance_group` resources; note any unexpected diffs
 - [ ] T014 [US3] Run `terraform plan -destroy 2>&1 | grep -E "(yandex_compute_instance_group|yandex_resourcemanager_folder_iam_member|yandex_iam_service_account)"` and confirm both IGs appear before IAM binding removals in the destroy sequence
 - [ ] T015 [US3] Run `terraform apply` against the live Yandex Cloud environment; confirm apply completes without errors
@@ -92,8 +92,8 @@
 
 **Purpose**: Code hygiene and final verification.
 
-- [ ] T018 [P] Run `terraform fmt -recursive terraform/` and commit any formatting fixes
-- [ ] T019 Run `terraform validate` one final time to confirm idempotent clean state
+- [X] T018 [P] Run `terraform fmt -recursive terraform/` and commit any formatting fixes
+- [X] T019 Run `terraform validate` one final time to confirm idempotent clean state
 - [ ] T020 Run `terraform plan` against live environment and confirm zero diffs (no unexpected drift)
 
 ---

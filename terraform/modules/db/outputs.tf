@@ -18,11 +18,6 @@ output "registry_url" {
   value       = "cr.yandex/${yandex_container_registry.main.id}"
 }
 
-output "service_account_id" {
-  description = "ID of the COI VM service account"
-  value       = yandex_iam_service_account.coi_vm.id
-}
-
 output "subnet_ids" {
   description = "List of subnet IDs created for the network"
   value       = [for s in yandex_vpc_subnet.main : s.id]

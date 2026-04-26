@@ -8,11 +8,6 @@ variable "registry_url" {
   type        = string
 }
 
-variable "service_account_id" {
-  description = "ID of the COI VM service account"
-  type        = string
-}
-
 variable "ydb_endpoint" {
   description = "Full gRPC connection string for YDB"
   type        = string

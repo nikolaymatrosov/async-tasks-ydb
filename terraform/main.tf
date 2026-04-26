@@ -56,7 +56,6 @@ module "workers" {
   ig_warmup_duration        = var.ig_warmup_duration
   ig_measurement_duration   = var.ig_measurement_duration
   registry_url              = module.db.registry_url
-  service_account_id        = module.db.service_account_id
   ydb_endpoint              = module.db.ydb_endpoint
   ydb_database              = module.db.ydb_database_path
   subnet_ids                = module.db.subnet_ids
@@ -74,12 +73,11 @@ module "producer" {
   producer_size  = var.producer_size
   producer_rate  = var.producer_rate
 
-  registry_url       = module.db.registry_url
-  service_account_id = module.db.service_account_id
-  ydb_endpoint       = module.db.ydb_endpoint
-  ydb_database       = module.db.ydb_database_path
-  subnet_ids         = module.db.subnet_ids
-  apigw_url          = module.apigw.gateway_domain
+  registry_url = module.db.registry_url
+  ydb_endpoint = module.db.ydb_endpoint
+  ydb_database = module.db.ydb_database_path
+  subnet_ids   = module.db.subnet_ids
+  apigw_url    = module.apigw.gateway_domain
 }
 
 module "apigw" {

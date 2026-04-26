@@ -18,10 +18,6 @@ output "instance_group_id" {
   value       = module.workers.instance_group_id
 }
 
-output "service_account_id" {
-  description = "ID of the created service account"
-  value       = module.db.service_account_id
-}
 
 output "cdc_worker_image" {
   description = "Container image for cdc-worker example"
